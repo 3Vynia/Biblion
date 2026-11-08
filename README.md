@@ -50,4 +50,4 @@ next phase.
 
 ## License
 
-No license yet: © dufainer, all rights reserved.
+No license yet: © Crystal, all rights reserved.
