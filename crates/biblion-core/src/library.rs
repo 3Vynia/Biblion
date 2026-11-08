@@ -18,8 +18,13 @@ const MAX_IDLE_READERS: usize = 8;
 
 pub struct Library {
     db_path: PathBuf,
-    /// The single write connection (SQLite allows one writer).
+    /// Write connection used by the scanner, which holds it for a whole scan.
     writer: Mutex<Connection>,
+    /// Write connection for small user changes (progress, favourites…).
+    /// SQLite still runs one write transaction at a time, but the scanner
+    /// commits every few hundred books, so these wait milliseconds instead of
+    /// the whole scan.
+    user_writer: Mutex<Connection>,
     /// Reusable read connections (WAL allows reads while scanning).
     readers: Mutex<Vec<Connection>>,
     covers: CoverCache,
@@ -36,10 +41,12 @@ impl Library {
         let db_path = data_dir.join("library.db");
         let mut writer = db::open(&db_path)?;
         db::migrate(&mut writer)?;
+        let user_writer = db::open(&db_path)?;
         Ok(Self {
             covers: CoverCache::new(data_dir.join("covers"))?,
             db_path,
             writer: Mutex::new(writer),
+            user_writer: Mutex::new(user_writer),
             readers: Mutex::new(Vec::new()),
             scanning: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
@@ -66,6 +73,12 @@ impl Library {
 
     fn write<T>(&self, f: impl FnOnce(&mut Connection) -> Result<T>) -> Result<T> {
         let mut conn = self.writer.lock().unwrap();
+        f(&mut conn)
+    }
+
+    /// Writes made by the user; never blocked for the duration of a scan.
+    fn user_write<T>(&self, f: impl FnOnce(&mut Connection) -> Result<T>) -> Result<T> {
+        let mut conn = self.user_writer.lock().unwrap();
         f(&mut conn)
     }
 
@@ -131,33 +144,33 @@ impl Library {
     // ── Reading and user state ──────────────────────────────────────
 
     pub fn set_progress(&self, id: BookId, locator: &str, percent: f64, finished: bool) -> Result<()> {
-        self.write(|c| db::set_progress(c, id, locator, percent, finished))
+        self.user_write(|c| db::set_progress(c, id, locator, percent, finished))
     }
 
     pub fn set_favorite(&self, id: BookId, favorite: bool) -> Result<()> {
-        self.write(|c| db::set_favorite(c, id, favorite))
+        self.user_write(|c| db::set_favorite(c, id, favorite))
     }
 
     pub fn set_rating(&self, id: BookId, rating: Option<u8>) -> Result<()> {
-        self.write(|c| db::set_rating(c, id, rating))
+        self.user_write(|c| db::set_rating(c, id, rating))
     }
 
     pub fn update_metadata(&self, id: BookId, m: Metadata) -> Result<()> {
         let mut m = m;
         formats::util::normalize_metadata(&mut m);
-        self.write(|c| db::update_metadata(c, id, &m))
+        self.user_write(|c| db::update_metadata(c, id, &m))
     }
 
     pub fn create_shelf(&self, name: &str) -> Result<i64> {
-        self.write(|c| db::create_shelf(c, name))
+        self.user_write(|c| db::create_shelf(c, name))
     }
 
     pub fn add_to_shelf(&self, shelf: i64, book: BookId) -> Result<()> {
-        self.write(|c| db::add_to_shelf(c, shelf, book))
+        self.user_write(|c| db::add_to_shelf(c, shelf, book))
     }
 
     pub fn remove_from_shelf(&self, shelf: i64, book: BookId) -> Result<()> {
-        self.write(|c| db::remove_from_shelf(c, shelf, book))
+        self.user_write(|c| db::remove_from_shelf(c, shelf, book))
     }
 
     pub fn list_shelves(&self) -> Result<Vec<Shelf>> {
@@ -191,7 +204,7 @@ impl Library {
         let book = self.get_book(id)?;
         let key = book.fingerprint.clone();
         self.covers.store(&key, image_bytes)?;
-        self.write(|c| db::set_cover_key(c, id, &key))?;
+        self.user_write(|c| db::set_cover_key(c, id, &key))?;
         Ok(key)
     }
 

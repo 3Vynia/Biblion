@@ -149,3 +149,38 @@ fn reads_work_while_scanning() {
     assert!(reader.join().unwrap() > 0);
     assert!(lib.scan(&ScanOptions { roots: vec![books.clone()], ..Default::default() }, &|_| {}).is_ok());
 }
+
+#[test]
+fn user_writes_do_not_wait_for_a_scan() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    write_epub(&books.join("first.epub"), "First", "Some Author", 1);
+    let lib = std::sync::Arc::new(Library::open(tmp.path().join("data")).unwrap());
+    scan(&lib, &books);
+    let id = find(&lib, "first")[0].id;
+    for i in 0..50 {
+        write_epub(&books.join(format!("{i}.epub")), &format!("Book {i}"), "Some Author", i as u8);
+    }
+
+    // While the scan is running, save progress from another thread (as the
+    // reader does) and require it to finish long before the scan would.
+    let saved = std::sync::Mutex::new(None);
+    let on_event = |ev: biblion_core::scanner::ScanEvent| {
+        if !matches!(ev, biblion_core::scanner::ScanEvent::Processing { done: 0, .. }) {
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let lib = lib.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(lib.set_progress(id, "epubcfi(/6/2)", 0.25, false).is_ok()
+                && lib.set_favorite(id, true).is_ok());
+        });
+        *saved.lock().unwrap() = Some(rx.recv_timeout(std::time::Duration::from_secs(5)));
+    };
+    lib.scan(&ScanOptions { roots: vec![books.clone()], ..Default::default() }, &on_event).unwrap();
+
+    assert_eq!(*saved.lock().unwrap(), Some(Ok(true)), "user writes blocked by the scan");
+    let book = lib.get_book(id).unwrap();
+    assert_eq!(book.progress.unwrap().locator, "epubcfi(/6/2)");
+    assert!(book.favorite);
+}
