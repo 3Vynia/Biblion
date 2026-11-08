@@ -36,6 +36,22 @@ $B gen-test /tmp/books --count 200000
 $B --data /tmp/db scan /tmp/books && $B --data /tmp/db bench
 ```
 
+## Desktop app
+
+Requirements: Rust, Node.js, pnpm and the
+[Tauri v2 system dependencies](https://v2.tauri.app/start/prerequisites/)
+(`webkit2gtk-4.1`, `librsvg`… on Linux).
+
+```bash
+cd apps/desktop
+pnpm install
+pnpm tauri dev      # development
+pnpm tauri build    # installable bundles
+pnpm test           # UI unit tests
+```
+
+Set `BIBLION_DATA_DIR=/some/folder` to use a separate library while testing.
+
 ## Tests
 
 ```bash
@@ -45,8 +61,9 @@ cargo run --release -p biblion-core --example thumb_bench
 
 ## Status
 
-Work in progress. The core and the CLI work; the Tauri desktop app is the
-next phase.
+Work in progress. The core and the CLI work. The desktop app has its first
+version: library folders, scanning with progress, a virtualised cover grid,
+search, book details and an EPUB/MOBI/AZW3 reader.
 
 ## License
 

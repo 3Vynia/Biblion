@@ -1,16 +1,16 @@
 # Architecture
 
 ```
-┌──────────────────────── Tauri app (next phase) ────────────────────────────┐
-│  Web UI (Svelte/React)                                                     │
+┌──────────────────────── apps/desktop (Tauri v2) ───────────────────────────┐
+│  Web UI (Svelte 5 + TypeScript)                                            │
 │   • Virtualised cover grid    • Reader: foliate-js / pdf.js / comic viewer │
-│                         ▲ invoke / events            ▲ asset://thumbs      │
+│                      ▲ invoke / Channel        ▲ thumb:// · book://        │
 ├─────────────────────────┼────────────────────────────┼─────────────────────┤
-│  src-tauri: thin #[tauri::command]s → biblion_core::Library                │
+│  src-tauri: thin async #[tauri::command]s → biblion_core::Library          │
 └─────────────────────────┼────────────────────────────┼─────────────────────┘
                           ▼                            │
 ┌──────────────────────── biblion-core ──────────────┼─────────────────────┐
-│ library.rs   Facade: 1 writer + pool of readers (Send + Sync)              │
+│ library.rs   Facade: scan writer + user writer + reader pool (Send + Sync) │
 │ scanner.rs   walk → diff → parallel extraction (rayon) → batched writer    │
 │ formats/     epub · pdf · mobi/azw3 · comic (cbz/cbr) · util               │
 │ covers.rs    360×540 JPEG thumbnails on disk (DCT scaling + SIMD resize)   │
@@ -29,9 +29,13 @@ only when its size or `mtime` changes, so rescanning 200k unchanged books takes
 instead of being deleted. When a new file shows up with the same fingerprint it
 is treated as a move: it keeps its id, progress, favourites and shelves.
 
-**One writer, many readers.** SQLite in WAL mode. The scanner writes batches of
-500 per transaction from a single thread while the UI keeps reading through the
-connection pool. This is covered by a test.
+**Writers that never block the UI.** SQLite in WAL mode. The scanner writes
+batches of 500 per transaction from a single thread while the UI keeps reading
+through the connection pool. User changes (progress, favourites, ratings,
+metadata, shelves, covers) go through a second write connection: SQLite still
+runs one write transaction at a time, but since the scanner commits every
+batch, a progress save waits milliseconds instead of the whole scan. Both
+behaviours are covered by tests.
 
 **Indexes shaped by the UI.** Every grid sort order (title, author, series,
 added, format) has an index that starts with `missing`, so the filter and the
@@ -66,35 +70,50 @@ name provides (`Author - Title.ext`). It never stops the scan.
 `.cbr` files that are really zips, and vice versa, are detected from their
 magic bytes.
 
-## Tauri layer (next phase)
+## Desktop app (`apps/desktop`)
 
-```rust
-// src-tauri/src/main.rs (sketch)
-struct AppState(Arc<Library>);
-
-#[tauri::command]
-fn list_books(state: State<AppState>, query: BookQuery) -> Result<Page<BookSummary>, String> {
-    state.0.list_books(&query).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn scan(app: AppHandle, state: State<'_, AppState>, roots: Vec<PathBuf>) -> Result<ScanReport, String> {
-    let lib = state.0.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        lib.scan(&ScanOptions { roots, ..Default::default() }, &|ev| { let _ = app.emit("scan", ev); })
-    }).await.unwrap().map_err(|e| e.to_string())
-}
-// … get_book, set_progress, set_favorite, update_metadata, shelves, comic_page, set_cover…
+```
+apps/desktop/
+├─ src/                    Svelte 5 + TypeScript UI
+│  ├─ lib/api.ts           typed wrappers around the commands
+│  ├─ lib/types.ts         mirror of the serde types in biblion-core
+│  ├─ lib/pageCache.ts     paged LRU cache behind the grid (unit-tested)
+│  ├─ lib/gridLayout.ts    grid geometry (unit-tested)
+│  ├─ components/          CoverGrid · BookDetail · ScanPanel
+│  └─ reader/              EpubReader (foliate-js)
+├─ vendor/foliate-js/      pinned copy, see BIBLION.md
+└─ src-tauri/              crate `biblion-desktop` (workspace member)
+   ├─ commands.rs          #[tauri::command]s → Library
+   ├─ protocols.rs         thumb:// and book:// schemes
+   └─ settings.rs          library folders (settings.json)
 ```
 
-- **Thumbnails** are served straight from disk through the asset protocol
-  (`convertFileSrc(thumbnailPath)`), with no bytes going over IPC.
-- **Grid:** virtualised (e.g. TanStack Virtual), fetching pages of 200 items
-  with `list_books(offset, limit)`.
-- **PDF covers:** a background UI task walks `books_without_cover("pdf")`,
-  renders page 1 with pdf.js and calls `set_cover`.
-- **Progress:** the reader stores an opaque `locator` (CFI for EPUB, page for
-  PDF and comics) plus a percentage via `set_progress`.
+- **Commands are `async`** and run SQLite work on the blocking pool:
+  synchronous commands would run on the main thread and freeze the window.
+  Errors reach the UI as `{ code, message }` (`cancelled`, `not_found`,
+  `invalid_folder`…).
+- **Scan progress** streams through a Tauri `Channel`, throttled to ~10
+  events/s. While a scan runs the grid refreshes every 2 s, keeping the old
+  pages on screen until the new ones arrive (no flicker).
+- **Thumbnails** are served from disk by the `thumb://localhost/<cover_key>`
+  scheme: no bytes over IPC and no asset-protocol scope to manage. Keys are
+  validated, so the scheme cannot read arbitrary files.
+- **Book files** are served by `book://localhost/<book_id>`; only ids that
+  exist in the database resolve. Range requests for large PDFs come with
+  the pdf.js reader.
+- **Grid:** custom virtualisation (only visible rows plus overscan are in
+  the DOM), pages of 200 books from `list_books(offset, limit)`, at most 12
+  pages in memory, stale responses from a previous search are dropped.
+- **Library folders** are canonicalised and never nested, so no file is
+  walked twice. `settings.json` is written atomically; a corrupt file is set
+  aside and the defaults are used.
+- **Reader:** foliate-js renders EPUB, MOBI and AZW3. Book content runs in
+  iframes, and the CSP (`script-src 'self'`) keeps scripts inside books from
+  running. The position is saved as an EPUB CFI plus a percentage via
+  `set_progress`, debounced to once per second and flushed on close.
+- **PDF covers (next):** a background UI task walks
+  `books_without_cover("pdf")`, renders page 1 with pdf.js and calls
+  `set_cover`.
 
 ## To do / ideas
 
