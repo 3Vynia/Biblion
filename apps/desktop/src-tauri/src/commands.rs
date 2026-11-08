@@ -124,7 +124,18 @@ pub async fn scan(state: State<'_, AppState>, force: bool, on_event: Channel<Sca
                 let _ = on_event.send(ev);
             }
         };
-        lib.scan(&ScanOptions { roots, force, threads: None }, &on_event)
+        let report = lib.scan(&ScanOptions { roots, force, threads: None }, &on_event)?;
+        tracing::info!(
+            found = report.found,
+            added = report.added,
+            updated = report.updated,
+            unchanged = report.unchanged,
+            missing = report.missing,
+            errors = report.errors,
+            elapsed_ms = report.elapsed_ms as u64,
+            "scan finished"
+        );
+        Ok(report)
     })
     .await
 }
