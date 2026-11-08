@@ -1,0 +1,151 @@
+use std::io::{Cursor, Write};
+use std::path::Path;
+
+use biblion_core::scanner::ScanOptions;
+use biblion_core::{BookQuery, Library, Metadata, SortBy};
+use zip::write::SimpleFileOptions;
+
+fn cover_jpeg(seed: u8) -> Vec<u8> {
+    let img = image::RgbImage::from_fn(400, 600, |x, y| image::Rgb([seed, (x % 255) as u8, (y % 255) as u8]));
+    let mut out = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(img).write_to(&mut out, image::ImageFormat::Jpeg).unwrap();
+    out.into_inner()
+}
+
+fn write_epub(path: &Path, title: &str, author: &str, seed: u8) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    let o = SimpleFileOptions::default();
+    zip.start_file("mimetype", o).unwrap();
+    zip.write_all(b"application/epub+zip").unwrap();
+    zip.start_file("META-INF/container.xml", o).unwrap();
+    zip.write_all(br#"<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>"#).unwrap();
+    zip.start_file("content.opf", o).unwrap();
+    write!(zip, r#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>{title}</dc:title><dc:creator>{author}</dc:creator></metadata><manifest><item id="c" href="img/c.jpg" media-type="image/jpeg" properties="cover-image"/></manifest></package>"#).unwrap();
+    zip.start_file("img/c.jpg", o).unwrap();
+    zip.write_all(&cover_jpeg(seed)).unwrap();
+    zip.finish().unwrap();
+}
+
+fn scan(lib: &Library, root: &Path) -> biblion_core::scanner::ScanReport {
+    lib.scan(&ScanOptions { roots: vec![root.to_path_buf()], ..Default::default() }, &|_| {}).unwrap()
+}
+
+fn find(lib: &Library, text: &str) -> Vec<biblion_core::BookSummary> {
+    lib.list_books(&BookQuery { text: Some(text.into()), sort: SortBy::Relevance, include_missing: true, ..Default::default() })
+        .unwrap()
+        .items
+}
+
+#[test]
+fn full_lifecycle() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+
+    write_epub(&books.join("a.epub"), "Cien años de soledad", "Gabriel García Márquez", 1);
+    write_epub(&books.join("b.epub"), "Rayuela", "Julio Cortázar", 2);
+    write_epub(&books.join("c.epub"), "Ficciones", "Jorge Luis Borges", 3);
+
+    let r = scan(&lib, &books);
+    assert_eq!((r.found, r.added, r.errors, r.covers), (3, 3, 0, 3));
+
+    // Accent-insensitive prefix search
+    let hits = find(&lib, "garcia sole");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].title, "Cien años de soledad");
+    assert!(hits[0].has_cover);
+    let a_id = hits[0].id;
+    assert!(lib.thumbnail_path(hits[0].cover_key.as_ref().unwrap()).is_file());
+
+    lib.set_progress(a_id, "epubcfi(/6/4!/4/2)", 0.42, false).unwrap();
+    lib.set_favorite(a_id, true).unwrap();
+
+    // Move + rename A, remove B
+    std::fs::create_dir_all(books.join("moved")).unwrap();
+    std::fs::rename(books.join("a.epub"), books.join("moved/García - Cien años.epub")).unwrap();
+    std::fs::rename(books.join("b.epub"), tmp.path().join("b-fuera.epub")).unwrap();
+
+    let r = scan(&lib, &books);
+    assert_eq!(r.found, 2);
+    assert_eq!(r.missing, 1, "{r:?}");
+    let a = lib.get_book(a_id).unwrap();
+    assert!(a.path.ends_with("García - Cien años.epub"), "a moved book keeps its id");
+    assert_eq!(a.progress.unwrap().percent, 0.42, "and its progress");
+    assert!(a.favorite);
+    assert_eq!(lib.list_books(&BookQuery::default()).unwrap().total, 2, "missing books are not listed");
+
+    // Manual edit: a forced rescan does not overwrite it
+    lib.update_metadata(a_id, Metadata { title: Some("Cien años de soledad (ed. especial)".into()), authors: vec!["G. García Márquez".into()], ..Default::default() }).unwrap();
+    lib.scan(&ScanOptions { roots: vec![books.clone()], force: true, ..Default::default() }, &|_| {}).unwrap();
+    assert_eq!(lib.get_book(a_id).unwrap().metadata.title.as_deref(), Some("Cien años de soledad (ed. especial)"));
+    assert_eq!(find(&lib, "especial").len(), 1, "FTS reflects the edit");
+
+    // B comes back: revived with the same id
+    let b_id = find(&lib, "rayuela")[0].id;
+    std::fs::rename(tmp.path().join("b-fuera.epub"), books.join("b.epub")).unwrap();
+    let r = scan(&lib, &books);
+    assert_eq!(r.missing, 0);
+    assert!(!lib.get_book(b_id).unwrap().missing);
+
+    // Shelves
+    let shelf = lib.create_shelf("Latin American Boom").unwrap();
+    lib.add_to_shelf(shelf, a_id).unwrap();
+    lib.add_to_shelf(shelf, b_id).unwrap();
+    assert_eq!(lib.list_books(&BookQuery { shelf_id: Some(shelf), ..Default::default() }).unwrap().total, 2);
+    assert_eq!(lib.list_books(&BookQuery { reading_only: true, ..Default::default() }).unwrap().total, 1);
+}
+
+#[test]
+fn corrupt_and_odd_files_do_not_break_scan() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    std::fs::create_dir_all(&books).unwrap();
+    std::fs::write(books.join("Author X - Empty.epub"), b"").unwrap();
+    std::fs::write(books.join("junk.pdf"), b"%PDF-1.4 this is not a pdf").unwrap();
+    std::fs::write(books.join("fake.cbr"), b"neither rar nor zip").unwrap();
+    std::fs::write(books.join("broken.mobi"), vec![0u8; 100]).unwrap();
+    std::fs::write(books.join("ignored.txt"), b"hello").unwrap();
+    // a .cbr that is really a zip (very common)
+    {
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(books.join("Series 01.cbr")).unwrap());
+        zip.start_file("p1.jpg", SimpleFileOptions::default()).unwrap();
+        zip.write_all(&cover_jpeg(9)).unwrap();
+        zip.finish().unwrap();
+    }
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    let r = scan(&lib, &books);
+    assert_eq!(r.found, 5);
+    assert_eq!(r.errors, 4);
+    let empty = find(&lib, "empty");
+    assert_eq!(empty[0].authors, vec!["Author X"], "metadata from the file name");
+    let comic = &find(&lib, "series")[0];
+    assert!(comic.has_cover, "detects a zip inside a .cbr");
+    assert_eq!(lib.comic_pages(comic.id).unwrap(), vec!["p1.jpg"]);
+}
+
+#[test]
+fn reads_work_while_scanning() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    for i in 0..300 {
+        write_epub(&books.join(format!("{i}.epub")), &format!("Book {i}"), "Some Author", (i % 200) as u8);
+    }
+    let lib = std::sync::Arc::new(Library::open(tmp.path().join("data")).unwrap());
+    let reader = {
+        let lib = lib.clone();
+        std::thread::spawn(move || {
+            let mut reads = 0;
+            while lib.is_scanning() || reads == 0 {
+                lib.list_books(&BookQuery::default()).unwrap();
+                lib.stats().unwrap();
+                reads += 1;
+            }
+            reads
+        })
+    };
+    let r = scan(&lib, &books);
+    assert_eq!(r.added, 300);
+    assert!(reader.join().unwrap() > 0);
+    assert!(lib.scan(&ScanOptions { roots: vec![books.clone()], ..Default::default() }, &|_| {}).is_ok());
+}

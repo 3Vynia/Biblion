@@ -1,0 +1,291 @@
+use std::io::Read;
+use std::path::Path;
+
+use crate::Metadata;
+
+/// Entry names of a zip (skips undecodable names).
+pub fn zip_names<R: std::io::Read + std::io::Seek>(zip: &zip::ZipArchive<R>) -> Vec<String> {
+    zip.file_names().filter_map(|r| r.ok()).map(|c| c.into_owned()).collect()
+}
+
+/// Reads at most `limit` bytes from a reader.
+pub fn read_limited<R: Read>(r: R, limit: u64) -> std::io::Result<Vec<u8>> {
+    let mut buf = Vec::new();
+    r.take(limit + 1).read_to_end(&mut buf)?;
+    if buf.len() as u64 > limit {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "entry too large"));
+    }
+    Ok(buf)
+}
+
+pub fn is_image_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"].iter().any(|e| lower.ends_with(e))
+}
+
+/// Checks the magic bytes of a supported image.
+pub fn looks_like_image(b: &[u8]) -> bool {
+    b.starts_with(&[0xFF, 0xD8, 0xFF])
+        || b.starts_with(b"\x89PNG")
+        || b.starts_with(b"GIF8")
+        || (b.len() > 12 && &b[0..4] == b"RIFF" && &b[8..12] == b"WEBP")
+        || b.starts_with(b"BM")
+}
+
+/// "Natural" order: `page2` < `page10`. Case-insensitive.
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (mut ai, mut bi) = (a.chars().peekable(), b.chars().peekable());
+    loop {
+        match (ai.peek().copied(), bi.peek().copied()) {
+            (None, None) => return Ordering::Equal,
+            (None, _) => return Ordering::Less,
+            (_, None) => return Ordering::Greater,
+            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
+                let mut na = String::new();
+                while let Some(c) = ai.peek().copied().filter(|c| c.is_ascii_digit()) {
+                    na.push(c);
+                    ai.next();
+                }
+                let mut nb = String::new();
+                while let Some(c) = bi.peek().copied().filter(|c| c.is_ascii_digit()) {
+                    nb.push(c);
+                    bi.next();
+                }
+                let (ta, tb) = (na.trim_start_matches('0'), nb.trim_start_matches('0'));
+                let ord = ta.len().cmp(&tb.len()).then_with(|| ta.cmp(tb));
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            }
+            (Some(x), Some(y)) => {
+                let ord = x.to_lowercase().cmp(y.to_lowercase());
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+                ai.next();
+                bi.next();
+            }
+        }
+    }
+}
+
+/// Decodes `%20` and friends in resource paths.
+pub fn percent_decode(s: &str) -> String {
+    fn hex(b: u8) -> Option<u8> {
+        (b as char).to_digit(16).map(|d| d as u8)
+    }
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push(h * 16 + l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Resolves `href` relative to `base_dir` inside a zip archive.
+pub fn resolve_zip_path(base_dir: &str, href: &str) -> String {
+    let href = href.split('#').next().unwrap_or("");
+    let href = percent_decode(href);
+    let mut parts: Vec<&str> = if href.starts_with('/') {
+        Vec::new()
+    } else {
+        base_dir.split('/').filter(|p| !p.is_empty()).collect()
+    };
+    for seg in href.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            s => parts.push(s),
+        }
+    }
+    parts.join("/")
+}
+
+/// Strips HTML tags and collapses whitespace (for descriptions).
+pub fn strip_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_tag = false;
+    for c in s.chars() {
+        match c {
+            '<' => {
+                in_tag = true;
+                out.push(' ');
+            }
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    let out = out
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
+    collapse_ws(&out)
+}
+
+pub fn collapse_ws(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn clean_opt(v: &mut Option<String>) {
+    if let Some(s) = v {
+        let c = collapse_ws(s);
+        *v = if c.is_empty() || c.eq_ignore_ascii_case("unknown") { None } else { Some(c) };
+    }
+}
+
+pub fn normalize_metadata(m: &mut Metadata) {
+    clean_opt(&mut m.title);
+    clean_opt(&mut m.series);
+    clean_opt(&mut m.publisher);
+    clean_opt(&mut m.language);
+    clean_opt(&mut m.isbn);
+    clean_opt(&mut m.published);
+    if let Some(d) = &m.description {
+        let d = strip_html(d);
+        m.description = if d.is_empty() { None } else { Some(d) };
+    }
+    let mut seen = std::collections::HashSet::new();
+    m.authors = m
+        .authors
+        .iter()
+        .flat_map(|a| split_authors(a))
+        .filter(|a| !a.is_empty() && !a.eq_ignore_ascii_case("unknown"))
+        .filter(|a| seen.insert(a.to_lowercase()))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    m.tags = m
+        .tags
+        .iter()
+        .map(|t| collapse_ws(t))
+        .filter(|t| !t.is_empty() && t.len() < 100)
+        .filter(|t| seen.insert(t.to_lowercase()))
+        .collect();
+    if let Some(isbn) = &m.isbn {
+        let digits: String = isbn.chars().filter(|c| c.is_ascii_digit() || *c == 'X' || *c == 'x').collect();
+        m.isbn = if digits.len() == 10 || digits.len() == 13 { Some(digits.to_uppercase()) } else { None };
+    }
+}
+
+/// "A & B", "A; B", "A and B" → several authors. Does not split on commas
+/// because "Last, First" is very common.
+fn split_authors(s: &str) -> Vec<String> {
+    let s = collapse_ws(s);
+    s.split([';', '&'])
+        .flat_map(|p| p.split(" and ").map(str::to_owned).collect::<Vec<_>>())
+        .map(|p| p.trim().to_owned())
+        .collect()
+}
+
+/// Fills in title/author from the file name when missing.
+/// Recognises "Author - Title" and "Title (Author)".
+pub fn fill_from_filename(m: &mut Metadata, path: &Path) {
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").replace('_', " ");
+    let stem = collapse_ws(&stem);
+    let has_title = m.title.as_deref().is_some_and(|t| !t.trim().is_empty());
+    if has_title && !m.authors.is_empty() {
+        return;
+    }
+    let (author, title) = if let Some((a, t)) = stem.split_once(" - ") {
+        (Some(a.trim().to_owned()), t.trim().to_owned())
+    } else if let (Some(open), true) = (stem.rfind('('), stem.ends_with(')')) {
+        (Some(stem[open + 1..stem.len() - 1].trim().to_owned()), stem[..open].trim().to_owned())
+    } else {
+        (None, stem.clone())
+    };
+    if !has_title {
+        m.title = Some(if title.is_empty() { stem } else { title });
+    }
+    if m.authors.is_empty() {
+        if let Some(a) = author.filter(|a| !a.is_empty() && !a.chars().all(|c| c.is_ascii_digit())) {
+            m.authors.push(a);
+        }
+    }
+}
+
+/// Sort key: leading articles removed, lowercase, no diacritics.
+pub fn sort_key(s: &str) -> String {
+    let lower = fold_diacritics(&s.to_lowercase());
+    let trimmed = lower.trim_start_matches(|c: char| !c.is_alphanumeric());
+    for art in ["the ", "a ", "an ", "el ", "la ", "los ", "las ", "un ", "una ", "le ", "les ", "der ", "die ", "das "] {
+        if let Some(rest) = trimmed.strip_prefix(art) {
+            return rest.to_owned();
+        }
+    }
+    trimmed.to_owned()
+}
+
+/// "Gabriel García Márquez" → "marquez, gabriel garcia" (simple heuristic).
+pub fn author_sort_key(name: &str) -> String {
+    let name = fold_diacritics(&name.to_lowercase());
+    if name.contains(',') {
+        return name;
+    }
+    let parts: Vec<&str> = name.split_whitespace().collect();
+    match parts.len() {
+        0 | 1 => name,
+        _ => format!("{}, {}", parts[parts.len() - 1], parts[..parts.len() - 1].join(" ")),
+    }
+}
+
+pub fn fold_diacritics(s: &str) -> String {
+    s.chars()
+        .map(|c| match c {
+            'á' | 'à' | 'ä' | 'â' | 'ã' | 'å' => 'a',
+            'é' | 'è' | 'ë' | 'ê' => 'e',
+            'í' | 'ì' | 'ï' | 'î' => 'i',
+            'ó' | 'ò' | 'ö' | 'ô' | 'õ' | 'ø' => 'o',
+            'ú' | 'ù' | 'ü' | 'û' => 'u',
+            'ñ' => 'n',
+            'ç' => 'c',
+            c => c,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn natural_sort() {
+        let mut v = vec!["p10.jpg", "p2.jpg", "P1.jpg", "p02b.jpg"];
+        v.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(v, vec!["P1.jpg", "p2.jpg", "p02b.jpg", "p10.jpg"]);
+    }
+
+    #[test]
+    fn resolve_paths() {
+        assert_eq!(resolve_zip_path("OEBPS/text", "../images/c%20v.jpg#x"), "OEBPS/images/c v.jpg");
+        assert_eq!(resolve_zip_path("", "cover.jpg"), "cover.jpg");
+    }
+
+    #[test]
+    fn filename_parsing() {
+        let mut m = Metadata::default();
+        fill_from_filename(&mut m, Path::new("/x/Isaac Asimov - Fundación.epub"));
+        assert_eq!(m.title.as_deref(), Some("Fundación"));
+        assert_eq!(m.authors, vec!["Isaac Asimov"]);
+    }
+
+    #[test]
+    fn sorting_keys() {
+        assert_eq!(sort_key("El Señor de los Anillos"), "senor de los anillos");
+        assert_eq!(author_sort_key("Gabriel García Márquez"), "marquez, gabriel garcia");
+    }
+}
