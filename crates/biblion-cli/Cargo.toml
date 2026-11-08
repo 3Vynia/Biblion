@@ -1,0 +1,19 @@
+[package]
+name = "biblion-cli"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "biblion"
+path = "src/main.rs"
+
+[dependencies]
+biblion-core = { path = "../biblion-core" }
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+tracing-subscriber.workspace = true
+zip = { workspace = true }
+image.workspace = true
+rayon.workspace = true
