@@ -68,6 +68,13 @@ fn main() {
             commands::list_books,
             commands::get_book,
             commands::stats,
+            commands::list_authors,
+            commands::list_series,
+            commands::set_favorite,
+            commands::list_shelves,
+            commands::create_shelf,
+            commands::set_in_shelf,
+            commands::book_shelves,
             commands::set_progress,
         ])
         .run(tauri::generate_context!())

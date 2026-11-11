@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
-use biblion_core::{Book, BookId, BookQuery, BookSummary, Library, LibraryStats, Page};
+use biblion_core::{AuthorEntry, Book, BookId, BookQuery, BookSummary, Library, LibraryStats, Page, Shelf};
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -186,6 +186,67 @@ pub async fn get_book(state: State<'_, AppState>, id: BookId) -> CmdResult<Book>
 pub async fn stats(state: State<'_, AppState>) -> CmdResult<LibraryStats> {
     let lib = state.lib.clone();
     blocking(move || lib.stats()).await
+}
+
+#[tauri::command]
+pub async fn list_authors(
+    state: State<'_, AppState>,
+    prefix: Option<String>,
+    offset: u32,
+    limit: u32,
+) -> CmdResult<Page<AuthorEntry>> {
+    let lib = state.lib.clone();
+    let limit = limit.clamp(1, MAX_PAGE);
+    blocking(move || lib.list_authors(prefix.as_deref().filter(|p| !p.trim().is_empty()), offset, limit)).await
+}
+
+#[tauri::command]
+pub async fn list_series(state: State<'_, AppState>, offset: u32, limit: u32) -> CmdResult<Page<(String, u64)>> {
+    let lib = state.lib.clone();
+    let limit = limit.clamp(1, MAX_PAGE);
+    blocking(move || lib.list_series(offset, limit)).await
+}
+
+// ── Collections ──────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn set_favorite(state: State<'_, AppState>, id: BookId, favorite: bool) -> CmdResult<()> {
+    let lib = state.lib.clone();
+    blocking(move || lib.set_favorite(id, favorite)).await
+}
+
+#[tauri::command]
+pub async fn list_shelves(state: State<'_, AppState>) -> CmdResult<Vec<Shelf>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.list_shelves()).await
+}
+
+#[tauri::command]
+pub async fn create_shelf(state: State<'_, AppState>, name: String) -> CmdResult<i64> {
+    let name = name.trim().to_owned();
+    if name.is_empty() || name.chars().count() > 80 {
+        return Err(CmdError::new("invalid_argument", "Collection names must have 1 to 80 characters"));
+    }
+    let lib = state.lib.clone();
+    blocking(move || lib.create_shelf(&name)).await.map_err(|e| {
+        if e.message.contains("UNIQUE") {
+            CmdError::new("already_exists", "A collection with that name already exists")
+        } else {
+            e
+        }
+    })
+}
+
+#[tauri::command]
+pub async fn set_in_shelf(state: State<'_, AppState>, shelf: i64, book: BookId, member: bool) -> CmdResult<()> {
+    let lib = state.lib.clone();
+    blocking(move || if member { lib.add_to_shelf(shelf, book) } else { lib.remove_from_shelf(shelf, book) }).await
+}
+
+#[tauri::command]
+pub async fn book_shelves(state: State<'_, AppState>, id: BookId) -> CmdResult<Vec<i64>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.book_shelves(id)).await
 }
 
 // ── Reading ──────────────────────────────────────────────────────────────
