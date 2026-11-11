@@ -7,6 +7,7 @@
   import type { Book } from '../lib/types'
   import { THEMES, formatMinutes, readerCss, rendererAttributes } from './readerSettings'
   import { readerSettings } from './settingsStore.svelte'
+  import { rise } from '../lib/motion'
   import TocPanel, { type TocItem } from './TocPanel.svelte'
   import SearchPanel from './SearchPanel.svelte'
   import SettingsPanel from './SettingsPanel.svelte'
@@ -260,6 +261,7 @@
   role="dialog"
   aria-modal="true"
   aria-label="Reading {title}"
+  in:rise={{ y: 0, scale: 0.985, duration: 320 }}
   style:--r-bg={theme.bg}
   style:--r-fg={theme.fg}
   style:--r-link={theme.link}
