@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use biblion_core::dictionary::{Definition, DictionaryInfo};
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
 use biblion_core::{
     Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, Book, BookId, BookQuery, BookStats, BookSummary,
@@ -371,6 +372,36 @@ pub async fn list_annotations(state: State<'_, AppState>, query: AnnotationQuery
 pub async fn annotation_counts(state: State<'_, AppState>) -> CmdResult<(u64, u64)> {
     let lib = state.lib.clone();
     blocking(move || lib.annotation_counts()).await
+}
+
+// ── Dictionaries ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_dictionaries(state: State<'_, AppState>) -> CmdResult<Vec<DictionaryInfo>> {
+    let lib = state.lib.clone();
+    blocking(move || Ok(lib.list_dictionaries())).await
+}
+
+#[tauri::command]
+pub async fn define(state: State<'_, AppState>, word: String) -> CmdResult<Vec<Definition>> {
+    let word: String = word.trim().chars().take(100).collect();
+    if word.is_empty() {
+        return Ok(Vec::new());
+    }
+    let lib = state.lib.clone();
+    blocking(move || Ok(lib.define(&word))).await
+}
+
+#[tauri::command]
+pub async fn install_dictionary(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Vec<DictionaryInfo>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.install_dictionary(&path)).await
+}
+
+#[tauri::command]
+pub async fn remove_dictionary(state: State<'_, AppState>, id: String) -> CmdResult<Vec<DictionaryInfo>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.remove_dictionary(&id)).await
 }
 
 // ── Reading ──────────────────────────────────────────────────────────────
