@@ -16,6 +16,12 @@ describe('gridMetrics', () => {
     expect(m.totalHeight).toBeLessThan(33_000_000)
   })
 
+  it('never stretches a lone column into a giant cover', () => {
+    const m = gridMetrics(300, 100, 150)
+    expect(m.columns).toBe(1)
+    expect(m.cardWidth).toBeLessThanOrEqual(150 * 1.35)
+  })
+
   it('handles an empty library', () => {
     const m = gridMetrics(1000, 0)
     expect(m.rows).toBe(0)
