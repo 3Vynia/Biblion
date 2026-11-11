@@ -11,6 +11,7 @@
   import SeriesView from './views/SeriesView.svelte'
   import CollectionsView from './views/CollectionsView.svelte'
   import FormatsView from './views/FormatsView.svelte'
+  import SettingsView from './views/SettingsView.svelte'
   import { api, errorMessage } from './lib/api'
   import { READABLE } from './lib/format'
   import { library } from './lib/library.svelte'
@@ -18,6 +19,7 @@
   import { nav, routeKey } from './lib/nav.svelte'
   import { scan } from './lib/scan.svelte'
   import type { Book, BookSummary } from './lib/types'
+  import { ui } from './lib/uiSettings.svelte'
 
   const SEARCH_DEBOUNCE_MS = 180
   const REFRESH_DURING_SCAN_MS = 2500
@@ -49,10 +51,11 @@
 
   onMount(async () => {
     try {
+      await ui.load()
       roots = await api.getRoots()
       await library.refresh()
       if (roots.length === 0) showScan = true
-      else if (!(await api.isScanning())) scan.start() // cheap incremental rescan
+      else if (ui.value.scanOnStartup && !(await api.isScanning())) scan.start() // cheap incremental rescan
     } catch (e) {
       startupError = errorMessage(e)
     }
@@ -78,7 +81,10 @@
   function onGlobalKey(e: KeyboardEvent) {
     if (reading || showScan) return
     const inField = (e.target as HTMLElement | null)?.closest?.('input, select, textarea')
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+      e.preventDefault()
+      ui.update({ sidebarCollapsed: !ui.value.sidebarCollapsed })
+    } else if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
       e.preventDefault()
       document.getElementById('search')?.focus()
     } else if (e.key === 'Escape') {
@@ -156,6 +162,8 @@
               <CollectionsView />
             {:else if route.name === 'formats'}
               <FormatsView />
+            {:else if route.name === 'settings'}
+              <SettingsView {roots} onrootschange={(r) => (roots = r)} />
             {/if}
           </div>
         {/key}
