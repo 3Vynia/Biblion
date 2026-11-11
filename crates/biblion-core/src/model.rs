@@ -53,8 +53,25 @@ impl Format {
     }
 }
 
+/// Someone who worked on a book other than its authors.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Contributor {
+    pub name: String,
+    /// MARC relator code: `trl` translator, `ill` illustrator, `edt` editor,
+    /// `nrt` narrator, `ctb` contributor (when unknown)…
+    pub role: String,
+}
+
+/// A book identifier with its scheme (`isbn`, `uuid`, `asin`, `doi`…).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Identifier {
+    pub scheme: String,
+    pub value: String,
+}
+
 /// Metadata extracted from a file (before it is stored in the DB).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Metadata {
     pub title: Option<String>,
     pub authors: Vec<String>,
@@ -67,6 +84,15 @@ pub struct Metadata {
     pub description: Option<String>,
     pub tags: Vec<String>,
     pub page_count: Option<u32>,
+    pub subtitle: Option<String>,
+    pub contributors: Vec<Contributor>,
+    pub identifiers: Vec<Identifier>,
+    pub rights: Option<String>,
+    pub source: Option<String>,
+    /// Last modification of the edition, as written in the file.
+    pub modified: Option<String>,
+    /// e.g. "EPUB 3.0", "PDF 1.7", "MOBI 6".
+    pub format_version: Option<String>,
 }
 
 /// A book as the UI sees it in listings (lightweight).
