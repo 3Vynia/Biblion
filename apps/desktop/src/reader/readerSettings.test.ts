@@ -25,9 +25,14 @@ describe('normalizeSettings', () => {
 
 describe('rendererAttributes', () => {
   it('maps layout options to paginator attributes', () => {
-    expect(rendererAttributes(DEFAULT_SETTINGS)).toMatchObject({ flow: 'paginated', 'max-column-count': '2', gap: '6%' })
-    const scrolled = rendererAttributes({ ...DEFAULT_SETTINGS, flow: 'scrolled', spread: 'single', margin: 'wide' })
+    expect(rendererAttributes(DEFAULT_SETTINGS, 1400)).toMatchObject({ flow: 'paginated', 'max-column-count': '2', gap: '6%' })
+    const scrolled = rendererAttributes({ ...DEFAULT_SETTINGS, flow: 'scrolled', spread: 'single', margin: 'wide' }, 1400)
     expect(scrolled).toMatchObject({ flow: 'scrolled', 'max-column-count': '1', gap: '10%', margin: '0px' })
+  })
+
+  it('only shows two pages when there is room for two comfortable columns', () => {
+    expect(rendererAttributes(DEFAULT_SETTINGS, 950)['max-column-count']).toBe('1')
+    expect(rendererAttributes(DEFAULT_SETTINGS, 1200)['max-column-count']).toBe('2')
   })
 })
 

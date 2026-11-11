@@ -64,6 +64,9 @@ export const FONTS: Record<FontId, { label: string; stack: string | null }> = {
 
 const MARGIN_GAP: Record<Margin, string> = { narrow: '3%', normal: '6%', wide: '10%' }
 
+/** Narrower than this, two columns would each be too thin to read well. */
+export const TWO_PAGE_MIN_WIDTH = 1200
+
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n))
 const oneOf = <T extends string>(value: unknown, options: readonly T[], fallback: T): T =>
   options.includes(value as T) ? (value as T) : fallback
@@ -86,14 +89,15 @@ export function normalizeSettings(raw: unknown): ReaderSettings {
   }
 }
 
-/** Attributes for foliate's <foliate-paginator>. */
-export function rendererAttributes(s: ReaderSettings): Record<string, string> {
+/** Attributes for foliate's <foliate-paginator>, given the reading area width. */
+export function rendererAttributes(s: ReaderSettings, width: number): Record<string, string> {
+  const twoPages = s.spread === 'auto' && s.flow === 'paginated' && width >= TWO_PAGE_MIN_WIDTH
   return {
     flow: s.flow,
     gap: MARGIN_GAP[s.margin],
     margin: s.flow === 'scrolled' ? '0px' : '40px',
     'max-inline-size': '720px',
-    'max-column-count': s.spread === 'auto' ? '2' : '1',
+    'max-column-count': twoPages ? '2' : '1',
   }
 }
 
