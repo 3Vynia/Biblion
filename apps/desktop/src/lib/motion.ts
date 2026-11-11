@@ -4,7 +4,8 @@ import { cubicOut } from 'svelte/easing'
 import type { TransitionConfig } from 'svelte/transition'
 
 export const reducedMotion = (): boolean =>
-  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+  (typeof document !== 'undefined' && document.documentElement.classList.contains('no-motion')) ||
+  (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)
 
 /** Duration in ms, or 0 when the user asked for less motion. */
 export const ms = (duration: number) => (reducedMotion() ? 0 : duration)
