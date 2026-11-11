@@ -5,8 +5,7 @@
   import type { PageCache } from '../lib/pageCache'
   import type { BookSummary } from '../lib/types'
   import { GAP, gridMetrics, visibleRows } from '../lib/gridLayout'
-  import { thumbUrl } from '../lib/api'
-  import { placeholderHue } from '../lib/format'
+  import BookCover from './BookCover.svelte'
 
   interface Props {
     cache: PageCache<BookSummary>
@@ -25,8 +24,6 @@
   let width = $state(0)
   let height = $state(0)
   let scrollTop = $state(0)
-  /** Cover keys whose thumbnail failed to load (show the placeholder). */
-  let brokenCovers = $state(new Set<string>())
 
   const total = $derived.by(() => (void version, cache.total ?? 0))
   const metrics = $derived(gridMetrics(width - PADDING * 2, total))
@@ -60,10 +57,6 @@
   export function scrollToTop() {
     if (viewport) viewport.scrollTop = 0
     scrollTop = 0
-  }
-
-  function coverFailed(key: string) {
-    brokenCovers = new Set(brokenCovers).add(key)
   }
 </script>
 
@@ -99,21 +92,8 @@
             title={book.title}
           >
             <div class="cover" style:height="{metrics.coverHeight}px">
-              {#if book.cover_key && !brokenCovers.has(book.cover_key)}
-                <img
-                  src={thumbUrl(book.cover_key)}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  draggable="false"
-                  onerror={() => coverFailed(book.cover_key!)}
-                />
-              {:else}
-                <div class="placeholder" style:--hue={placeholderHue(book.title)}>
-                  <span class="ph-title">{book.title}</span>
-                  {#if book.authors.length}<span class="ph-author">{book.authors[0]}</span>{/if}
-                </div>
-              {/if}
+              <BookCover title={book.title} author={book.authors[0]} coverKey={book.cover_key} />
+              {#if book.favorite}<span class="fav" aria-label="Favourite">♥</span>{/if}
               {#if book.progress !== null && book.progress > 0}
                 <div class="progress" style:width="{Math.round(book.progress * 100)}%"></div>
               {/if}
@@ -169,53 +149,42 @@
 
   .cover {
     position: relative;
-    border-radius: 4px;
+    border-radius: 3px 6px 6px 3px;
     overflow: hidden;
     background: var(--surface-2);
     box-shadow: var(--shadow);
-    transition: transform 120ms ease;
+    transition:
+      transform 260ms var(--ease),
+      box-shadow 260ms var(--ease);
+  }
+
+  /* Spine highlight, like light on a real book. */
+  .cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgb(0 0 0 / 0.18), rgb(255 255 255 / 0.12) 3%, transparent 7%);
+    pointer-events: none;
   }
 
   .card:hover .cover {
-    transform: translateY(-2px);
+    transform: translateY(-5px) rotate(-0.5deg);
+    box-shadow: var(--shadow-lift);
   }
 
   .card.selected .cover {
     outline: 3px solid var(--accent);
-    outline-offset: 2px;
+    outline-offset: 3px;
   }
 
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-
-  .placeholder {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 14px 12px;
-    background: linear-gradient(160deg, hsl(var(--hue) 35% 38%), hsl(var(--hue) 40% 24%));
-    color: hsl(var(--hue) 30% 92%);
-    font-family: var(--serif);
-  }
-
-  .ph-title {
+  .fav {
+    position: absolute;
+    top: 6px;
+    left: 8px;
+    z-index: 1;
+    color: #ff6b6b;
     font-size: 15px;
-    line-height: 1.25;
-    display: -webkit-box;
-    -webkit-line-clamp: 6;
-    line-clamp: 6;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .ph-author {
-    font-size: 12px;
-    opacity: 0.85;
+    text-shadow: 0 1px 3px rgb(0 0 0 / 0.6);
   }
 
   .progress {
