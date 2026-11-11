@@ -333,3 +333,55 @@ fn analyze_counts_words_chapters_and_images() {
     assert_eq!(lib.book_stats(id).unwrap(), None, "stats of the old file must not be reused");
     assert_eq!(lib.analyze(id).unwrap().words, 5);
 }
+
+fn write_tagged_epub(path: &Path, title: &str, language: &str, subjects: &[&str]) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    let o = SimpleFileOptions::default();
+    zip.start_file("mimetype", o).unwrap();
+    zip.write_all(b"application/epub+zip").unwrap();
+    zip.start_file("META-INF/container.xml", o).unwrap();
+    zip.write_all(br#"<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>"#).unwrap();
+    let subjects: String = subjects.iter().map(|s| format!("<dc:subject>{s}</dc:subject>")).collect();
+    zip.start_file("content.opf", o).unwrap();
+    write!(zip, r#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>{title}</dc:title><dc:language>{language}</dc:language>{subjects}</metadata></package>"#).unwrap();
+    zip.finish().unwrap();
+}
+
+#[test]
+fn subjects_languages_and_collection_edits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    write_tagged_epub(&books.join("a.epub"), "Alpha", "es", &["Science Fiction", "Space"]);
+    write_tagged_epub(&books.join("b.epub"), "Beta", "es", &["Science Fiction"]);
+    write_tagged_epub(&books.join("c.epub"), "Gamma", "en", &["History"]);
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    scan(&lib, &books);
+
+    // Subjects with counts, alphabetical, with an optional prefix.
+    let tags = lib.list_tags(None, 0, 10).unwrap();
+    let names: Vec<(&str, u64)> = tags.items.iter().map(|t| (t.name.as_str(), t.book_count)).collect();
+    assert_eq!(names, [("History", 1), ("Science Fiction", 2), ("Space", 1)]);
+    assert_eq!(lib.list_tags(Some("sc"), 0, 10).unwrap().total, 1);
+    let sf = lib.list_books(&BookQuery { tag: Some("science fiction".into()), limit: 10, ..Default::default() }).unwrap();
+    assert_eq!(sf.total, 2);
+
+    // Languages with counts, and filtering by language.
+    assert_eq!(lib.list_languages().unwrap(), vec![("es".to_string(), 2), ("en".to_string(), 1)]);
+    let en = lib.list_books(&BookQuery { language: Some("EN".into()), limit: 10, ..Default::default() }).unwrap();
+    assert_eq!((en.total, en.items[0].title.as_str()), (1, "Gamma"));
+
+    // Collections can be renamed and deleted; books stay in the library.
+    let shelf = lib.create_shelf("Sci-fi").unwrap();
+    let other = lib.create_shelf("Others").unwrap();
+    lib.add_to_shelf(shelf, sf.items[0].id).unwrap();
+    lib.rename_shelf(shelf, "Science fiction").unwrap();
+    assert!(lib.rename_shelf(shelf, "others").is_err(), "names are unique, ignoring case");
+    assert!(lib.list_shelves().unwrap().iter().any(|s| s.name == "Science fiction" && s.book_count == 1));
+    lib.delete_shelf(shelf).unwrap();
+    let left: Vec<i64> = lib.list_shelves().unwrap().iter().map(|s| s.id).collect();
+    assert_eq!(left, vec![other]);
+    assert!(lib.book_shelves(sf.items[0].id).unwrap().is_empty());
+    assert_eq!(lib.stats().unwrap().books, 3);
+    assert!(matches!(lib.delete_shelf(shelf), Err(biblion_core::Error::NotFound(_))));
+}

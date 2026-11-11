@@ -458,6 +458,10 @@ pub fn list_books(conn: &Connection, q: &BookQuery) -> Result<Page<BookSummary>>
     if q.reading_only {
         wheres.push("p.book_id IS NOT NULL AND p.finished = 0".into());
     }
+    if let Some(lang) = q.language.as_deref().map(str::trim).filter(|l| !l.is_empty()) {
+        wheres.push("lower(b.language) = lower(?)".into());
+        args.push(Box::new(lang.to_owned()));
+    }
     if q.finished_only {
         wheres.push("p.finished = 1".into());
     }
@@ -611,6 +615,55 @@ pub fn book_shelves(conn: &Connection, book: BookId) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare_cached("SELECT shelf_id FROM shelf_books WHERE book_id = ?1")?;
     let ids = stmt.query_map([book], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
     Ok(ids)
+}
+
+pub fn list_tags(conn: &Connection, prefix: Option<&str>, offset: u32, limit: u32) -> Result<Page<crate::TagEntry>> {
+    let pattern = format!("{}%", prefix.unwrap_or("").replace(['%', '_'], ""));
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tags t WHERE t.name LIKE ?1
+           AND EXISTS (SELECT 1 FROM book_tags bt JOIN books b ON b.id = bt.book_id WHERE bt.tag_id = t.id AND b.missing = 0)",
+        [&pattern],
+        |r| r.get(0),
+    )?;
+    let mut stmt = conn.prepare_cached(
+        "SELECT t.id, t.name, COUNT(*) FROM tags t
+           JOIN book_tags bt ON bt.tag_id = t.id JOIN books b ON b.id = bt.book_id AND b.missing = 0
+         WHERE t.name LIKE ?1 GROUP BY t.id ORDER BY t.name COLLATE NOCASE LIMIT ?2 OFFSET ?3",
+    )?;
+    let items = stmt
+        .query_map(params![pattern, limit.clamp(1, 1000), offset], |r| {
+            Ok(crate::TagEntry { id: r.get(0)?, name: r.get(1)?, book_count: r.get::<_, i64>(2)? as u64 })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(Page { items, total: total as u64, offset })
+}
+
+/// Languages present in the library with their number of books, most common first.
+pub fn list_languages(conn: &Connection) -> Result<Vec<(String, u64)>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT lower(trim(language)) AS l, COUNT(*) AS n FROM books
+         WHERE missing = 0 AND language IS NOT NULL AND trim(language) <> ''
+         GROUP BY l ORDER BY n DESC, l",
+    )?;
+    let v = stmt.query_map([], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as u64)))?.collect::<std::result::Result<_, _>>()?;
+    Ok(v)
+}
+
+pub fn rename_shelf(conn: &Connection, id: i64, name: &str) -> Result<()> {
+    let n = conn.execute("UPDATE shelves SET name = ?2 WHERE id = ?1", params![id, name.trim()])?;
+    if n == 0 {
+        return Err(crate::Error::NotFound(format!("collection {id}")));
+    }
+    Ok(())
+}
+
+/// Deletes a collection; its books stay in the library.
+pub fn delete_shelf(conn: &Connection, id: i64) -> Result<()> {
+    let n = conn.execute("DELETE FROM shelves WHERE id = ?1", [id])?;
+    if n == 0 {
+        return Err(crate::Error::NotFound(format!("collection {id}")));
+    }
+    Ok(())
 }
 
 pub fn create_shelf(conn: &Connection, name: &str) -> Result<i64> {
