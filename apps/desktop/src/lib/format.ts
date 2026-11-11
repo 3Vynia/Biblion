@@ -50,3 +50,59 @@ export function plainText(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   return (doc.body.textContent ?? '').replace(/\s+\n/g, '\n').trim()
 }
+
+/** MARC relator codes used by EPUB, as readable roles. */
+const ROLES: Record<string, [string, string]> = {
+  trl: ['Translator', 'Translated by'],
+  ill: ['Illustrator', 'Illustrated by'],
+  edt: ['Editor', 'Edited by'],
+  nrt: ['Narrator', 'Narrated by'],
+  aui: ['Introduction', 'Introduction by'],
+  aft: ['Afterword', 'Afterword by'],
+  ann: ['Annotator', 'Annotated by'],
+  art: ['Artist', 'Art by'],
+  cov: ['Cover designer', 'Cover by'],
+  pht: ['Photographer', 'Photographs by'],
+  com: ['Compiler', 'Compiled by'],
+  bkp: ['Producer', 'Produced by'],
+  pbl: ['Publisher', 'Published by'],
+  ctb: ['Contributor', 'With contributions by'],
+}
+
+export function roleLabel(code: string): string {
+  return ROLES[code.toLowerCase()]?.[1] ?? (code ? `${code.charAt(0).toUpperCase()}${code.slice(1)}` : 'Contributor')
+}
+
+/** "es" → "Spanish", "pt-BR" → "Portuguese (Brazil)"; unknown codes are returned as-is. */
+export function languageName(code: string | null | undefined): string {
+  if (!code) return ''
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(code.trim()) ?? code
+  } catch {
+    return code
+  }
+}
+
+/** "2007-03-27" → "March 27, 2007"; "2007" stays "2007"; free text is kept. */
+export function formatPublished(value: string | null | undefined): string {
+  if (!value) return ''
+  const v = value.trim()
+  if (/^\d{4}$/.test(v)) return v
+  const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?/.exec(v)
+  if (!m) return v
+  const [, y, mo, d] = m
+  const date = new Date(Date.UTC(Number(y), Number(mo) - 1, d ? Number(d) : 1))
+  if (Number.isNaN(date.getTime())) return v
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', ...(d ? { day: 'numeric' } : {}), timeZone: 'UTC' })
+}
+
+const ID_LABELS: Record<string, string> = {
+  isbn: 'ISBN',
+  uuid: 'UUID',
+  asin: 'ASIN',
+  doi: 'DOI',
+  calibre: 'Calibre',
+  google: 'Google Books',
+}
+
+export const identifierLabel = (scheme: string) => ID_LABELS[scheme] ?? scheme.toUpperCase()
