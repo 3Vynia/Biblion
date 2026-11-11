@@ -46,6 +46,7 @@ export const api = {
     invoke<Page<TagEntry>>('list_tags', { prefix, offset, limit }),
   listLanguages: () => invoke<[string, number][]>('list_languages'),
   setInShelf: (shelf: number, book: BookId, member: boolean) => invoke<void>('set_in_shelf', { shelf, book, member }),
+  removeFromShelf: (shelf: number, books: BookId[]) => invoke<number>('remove_from_shelf', { shelf, books }),
   bookShelves: (id: BookId) => invoke<number[]>('book_shelves', { id }),
 
   setProgress: (id: BookId, locator: string, percent: number, finished: boolean) =>

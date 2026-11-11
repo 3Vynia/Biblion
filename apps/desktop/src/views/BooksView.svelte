@@ -4,12 +4,13 @@
   import { untrack } from 'svelte'
   import CoverGrid from '../components/CoverGrid.svelte'
   import FilterBar from '../components/FilterBar.svelte'
-  import { deleteCollection, renameCollection } from '../lib/collections'
+  import { deleteCollection, removeFromCollection, renameCollection } from '../lib/collections'
   import Icon from '../components/Icon.svelte'
   import { api, errorMessage } from '../lib/api'
   import { formatCount } from '../lib/format'
   import { library } from '../lib/library.svelte'
   import { rise } from '../lib/motion'
+  import { fly } from 'svelte/transition'
   import { nav, shelfRoute, type BookFilter } from '../lib/nav.svelte'
   import { PageCache, type Fetcher } from '../lib/pageCache'
   import type { BookSummary, SortBy } from '../lib/types'
@@ -44,10 +45,65 @@
   /** Filters picked in the Filters panel, on top of the screen's own. */
   let extra = $state<BookFilter>({})
 
-  // A collection the user made (not "To read") can be renamed or deleted here.
-  const ownShelf = $derived(
-    filter.shelf_id && filter.shelf_id !== library.toRead?.id ? library.shelves.find((s) => s.id === filter.shelf_id) : undefined,
-  )
+  // In a collection, books can be picked and taken out. A collection the
+  // user made (not "To read") can also be renamed or deleted.
+  const shelf = $derived(filter.shelf_id ? library.shelves.find((s) => s.id === filter.shelf_id) : undefined)
+  const ownShelf = $derived(shelf && shelf.id !== library.toRead?.id ? shelf : undefined)
+
+  let selecting = $state(false)
+  let picked = $state(new Set<number>())
+  let selectingAll = $state(false)
+
+  function startSelecting() {
+    picked = new Set()
+    selecting = true
+  }
+
+  function stopSelecting() {
+    selecting = false
+    picked = new Set()
+  }
+
+  function toggle(book: BookSummary) {
+    const next = new Set(picked)
+    if (!next.delete(book.id)) next.add(book.id)
+    picked = next
+  }
+
+  /** Picks every book of the current list (with filters), page by page. */
+  async function selectAll() {
+    if (total === null) return
+    if (picked.size === total) {
+      picked = new Set()
+      return
+    }
+    selectingAll = true
+    try {
+      const ids = new Set<number>()
+      const query = currentQuery()
+      for (let offset = 0; offset < total; offset += 1000) {
+        const page = await api.listBooks({ ...query, offset, limit: 1000 })
+        page.items.forEach((b) => ids.add(b.id))
+        if (page.items.length === 0) break
+      }
+      picked = ids
+    } finally {
+      selectingAll = false
+    }
+  }
+
+  async function removePicked() {
+    if (!shelf || picked.size === 0) return
+    if (await removeFromCollection(shelf, [...picked])) stopSelecting()
+  }
+
+  function onKey(e: KeyboardEvent) {
+    if (selecting && e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      stopSelecting()
+    }
+  }
 
   async function rename() {
     if (!ownShelf) return
@@ -61,10 +117,14 @@
 
   const effectiveSort = $derived<SortBy>(text.trim() && useRelevance ? 'relevance' : sort)
 
-  function fetcher(): Fetcher<BookSummary> {
+  function currentQuery() {
     // Only set extra filters apply, so they never switch off the screen's own.
-    const picked = Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== null && v !== undefined && v !== false))
-    const query = { ...filter, ...picked, text: text.trim() || null, sort: effectiveSort }
+    const set = Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== null && v !== undefined && v !== false))
+    return { ...filter, ...set, text: text.trim() || null, sort: effectiveSort }
+  }
+
+  function fetcher(): Fetcher<BookSummary> {
+    const query = currentQuery()
     return (offset, limit) => api.listBooks({ ...query, offset, limit })
   }
 
@@ -96,6 +156,8 @@
   })
 </script>
 
+<svelte:window onkeydowncapture={onKey} />
+
 <div class="books">
   <header in:rise={{ y: 6 }}>
     {#if nav.canGoBack}
@@ -108,7 +170,12 @@
     <span class="count">
       {#if total !== null}{formatCount(total)} {total === 1 ? 'book' : 'books'}{/if}
     </span>
-    {#if ownShelf}
+    {#if shelf && !selecting && (total ?? 0) > 0}
+      <button class="ghost icon-btn" onclick={startSelecting} title="Select books to remove" aria-label="Select books"
+        ><Icon name="select" size={16} /></button
+      >
+    {/if}
+    {#if ownShelf && !selecting}
       <button class="ghost icon-btn" onclick={rename} title="Rename collection" aria-label="Rename collection"
         ><Icon name="edit" size={16} /></button
       >
@@ -151,13 +218,41 @@
         {#if Object.values(extra).some(Boolean)}<button onclick={() => (extra = {})}>Clear filters</button>{/if}
       </div>
     {:else}
-      <CoverGrid bind:this={grid} {cache} {version} {selectedId} {onselect} {onopen} />
+      <CoverGrid
+        bind:this={grid}
+        {cache}
+        {version}
+        {selectedId}
+        {onselect}
+        {onopen}
+        {selecting}
+        {picked}
+        ontoggle={toggle}
+      />
     {/if}
   </div>
+
+  {#if selecting}
+    <div class="selection-bar" role="toolbar" aria-label="Selection" transition:fly={{ y: 40, duration: 260 }}>
+      <span class="picked-count">
+        <strong>{formatCount(picked.size)}</strong>
+        {picked.size === 1 ? 'book selected' : 'books selected'}
+      </span>
+      <button class="ghost" onclick={selectAll} disabled={selectingAll}>
+        {picked.size === total && total ? 'Select none' : selectingAll ? 'Selecting…' : 'Select all'}
+      </button>
+      <span class="divider"></span>
+      <button class="ghost" onclick={stopSelecting}>Cancel</button>
+      <button class="danger-btn" onclick={removePicked} disabled={picked.size === 0}>
+        <Icon name="minus" size={15} strokeWidth={2.4} /> Remove from collection
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
   .books {
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -204,6 +299,59 @@
     color: var(--muted);
     font-variant-numeric: tabular-nums;
     padding-top: 6px;
+  }
+
+  .selection-bar {
+    position: absolute;
+    left: 50%;
+    bottom: 22px;
+    translate: -50% 0;
+    z-index: 12;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 8px 8px 18px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 92%, transparent);
+    backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-lift);
+    white-space: nowrap;
+  }
+
+  .picked-count {
+    color: var(--muted);
+    margin-right: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .picked-count strong {
+    color: var(--text);
+  }
+
+  .divider {
+    width: 1px;
+    height: 22px;
+    background: var(--border);
+  }
+
+  .selection-bar button {
+    border-radius: 10px;
+    padding: 8px 14px;
+  }
+
+  .danger-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: #fff;
+    background: var(--danger);
+    border-color: var(--danger);
+  }
+
+  .danger-btn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 85%, black);
   }
 
   .icon-btn {
