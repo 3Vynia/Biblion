@@ -5,6 +5,7 @@ import type {
   AuthorEntry,
   Book,
   BookId,
+  BookStats,
   BookQuery,
   BookSummary,
   CmdError,
@@ -43,6 +44,11 @@ export const api = {
 
   setProgress: (id: BookId, locator: string, percent: number, finished: boolean) =>
     invoke<void>('set_progress', { id, locator, percent, finished }),
+
+  analyzeBook: (id: BookId) => invoke<BookStats>('analyze_book', { id }),
+  getUiSettings: () => invoke<unknown>('get_ui_settings'),
+  setUiSettings: (value: object) => invoke<void>('set_ui_settings', { value }),
+  dataDir: () => invoke<string>('data_dir'),
 
   getReaderSettings: () => invoke<unknown>('get_reader_settings'),
   setReaderSettings: (value: object) => invoke<void>('set_reader_settings', { value }),
