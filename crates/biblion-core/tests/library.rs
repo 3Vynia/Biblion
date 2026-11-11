@@ -468,3 +468,39 @@ fn highlights_notes_and_bookmarks() {
     assert!(matches!(lib.delete_annotation(h2), Err(biblion_core::Error::NotFound(_))));
     assert_eq!(lib.book_annotations(a).unwrap().len(), 2);
 }
+
+#[test]
+fn dictionaries_install_define_and_remove() {
+    let tmp = tempfile::tempdir().unwrap();
+    // A tiny StarDict dictionary in a download folder.
+    let src = tmp.path().join("download");
+    std::fs::create_dir_all(&src).unwrap();
+    let entries = [("faro", "Torre alta en las costas, con luz para guiar a los navegantes."), ("niebla", "Nube en contacto con la tierra.")];
+    let (mut idx, mut data) = (Vec::new(), Vec::new());
+    for (w, d) in entries {
+        idx.extend_from_slice(w.as_bytes());
+        idx.push(0);
+        idx.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        idx.extend_from_slice(&(d.len() as u32).to_be_bytes());
+        data.extend_from_slice(d.as_bytes());
+    }
+    std::fs::write(src.join("es.ifo"), "StarDict's dict ifo file\nversion=2.4.2\nbookname=Diccionario de prueba\nwordcount=2\nsametypesequence=m\n").unwrap();
+    std::fs::write(src.join("es.idx"), &idx).unwrap();
+    std::fs::write(src.join("es.dict"), &data).unwrap();
+
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    assert!(lib.list_dictionaries().is_empty());
+    assert!(lib.define("faro").is_empty());
+
+    let installed = lib.install_dictionary(&src.join("es.ifo")).unwrap();
+    assert_eq!(installed.len(), 1);
+    assert_eq!(installed[0].name, "Diccionario de prueba");
+    let defs = lib.define("Faros.");
+    assert_eq!(defs.len(), 1);
+    assert!(defs[0].body.starts_with("Torre alta"));
+    assert!(tmp.path().join("data/dictionaries").is_dir());
+
+    assert!(lib.remove_dictionary(&installed[0].id).unwrap().is_empty());
+    assert!(lib.define("faro").is_empty());
+    assert!(src.join("es.ifo").exists(), "the original files are left alone");
+}
