@@ -14,6 +14,7 @@ import type {
   ScanEvent,
   ScanReport,
   Shelf,
+  TagEntry,
 } from './types'
 
 export const api = {
@@ -39,6 +40,11 @@ export const api = {
   setFavorite: (id: BookId, favorite: boolean) => invoke<void>('set_favorite', { id, favorite }),
   listShelves: () => invoke<Shelf[]>('list_shelves'),
   createShelf: (name: string) => invoke<number>('create_shelf', { name }),
+  renameShelf: (id: number, name: string) => invoke<void>('rename_shelf', { id, name }),
+  deleteShelf: (id: number) => invoke<void>('delete_shelf', { id }),
+  listTags: (prefix: string | null, offset: number, limit: number) =>
+    invoke<Page<TagEntry>>('list_tags', { prefix, offset, limit }),
+  listLanguages: () => invoke<[string, number][]>('list_languages'),
   setInShelf: (shelf: number, book: BookId, member: boolean) => invoke<void>('set_in_shelf', { shelf, book, member }),
   bookShelves: (id: BookId) => invoke<number[]>('book_shelves', { id }),
 

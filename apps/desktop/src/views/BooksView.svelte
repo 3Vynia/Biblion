@@ -3,12 +3,14 @@
   // series, a collection, a format, or search results.
   import { untrack } from 'svelte'
   import CoverGrid from '../components/CoverGrid.svelte'
+  import FilterBar from '../components/FilterBar.svelte'
+  import { deleteCollection, renameCollection } from '../lib/collections'
   import Icon from '../components/Icon.svelte'
   import { api, errorMessage } from '../lib/api'
   import { formatCount } from '../lib/format'
   import { library } from '../lib/library.svelte'
   import { rise } from '../lib/motion'
-  import { nav, type BookFilter } from '../lib/nav.svelte'
+  import { nav, shelfRoute, type BookFilter } from '../lib/nav.svelte'
   import { PageCache, type Fetcher } from '../lib/pageCache'
   import type { BookSummary, SortBy } from '../lib/types'
 
@@ -39,11 +41,30 @@
   let useRelevance = $state(true)
   let version = $state(0)
   let grid = $state<CoverGrid>()
+  /** Filters picked in the Filters panel, on top of the screen's own. */
+  let extra = $state<BookFilter>({})
+
+  // A collection the user made (not "To read") can be renamed or deleted here.
+  const ownShelf = $derived(
+    filter.shelf_id && filter.shelf_id !== library.toRead?.id ? library.shelves.find((s) => s.id === filter.shelf_id) : undefined,
+  )
+
+  async function rename() {
+    if (!ownShelf) return
+    const name = await renameCollection(ownShelf)
+    if (name) nav.jump(shelfRoute(ownShelf.id, name))
+  }
+
+  async function remove() {
+    if (ownShelf && (await deleteCollection(ownShelf))) nav.jump({ name: 'collections' })
+  }
 
   const effectiveSort = $derived<SortBy>(text.trim() && useRelevance ? 'relevance' : sort)
 
   function fetcher(): Fetcher<BookSummary> {
-    const query = { ...filter, text: text.trim() || null, sort: effectiveSort }
+    // Only set extra filters apply, so they never switch off the screen's own.
+    const picked = Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== null && v !== undefined && v !== false))
+    const query = { ...filter, ...picked, text: text.trim() || null, sort: effectiveSort }
     return (offset, limit) => api.listBooks({ ...query, offset, limit })
   }
 
@@ -87,6 +108,15 @@
     <span class="count">
       {#if total !== null}{formatCount(total)} {total === 1 ? 'book' : 'books'}{/if}
     </span>
+    {#if ownShelf}
+      <button class="ghost icon-btn" onclick={rename} title="Rename collection" aria-label="Rename collection"
+        ><Icon name="edit" size={16} /></button
+      >
+      <button class="ghost icon-btn danger" onclick={remove} title="Delete collection" aria-label="Delete collection"
+        ><Icon name="trash" size={16} /></button
+      >
+    {/if}
+    <FilterBar base={filter} value={extra} onchange={(v) => (extra = v)} />
     <label class="sort">
       <span class="muted">Sort</span>
       {#if text.trim()}
@@ -115,7 +145,10 @@
     {:else if total === 0}
       <div class="empty" in:rise>
         <Icon name={text.trim() ? 'search' : 'books'} size={34} strokeWidth={1.4} />
-        <p>{text.trim() ? `No books match “${text.trim()}”.` : 'Nothing here yet.'}</p>
+        <p>
+          {text.trim() ? `No books match “${text.trim()}”.` : Object.keys(extra).length ? 'No books match these filters.' : 'Nothing here yet.'}
+        </p>
+        {#if Object.values(extra).some(Boolean)}<button onclick={() => (extra = {})}>Clear filters</button>{/if}
       </div>
     {:else}
       <CoverGrid bind:this={grid} {cache} {version} {selectedId} {onselect} {onopen} />
@@ -171,6 +204,17 @@
     color: var(--muted);
     font-variant-numeric: tabular-nums;
     padding-top: 6px;
+  }
+
+  .icon-btn {
+    padding: 7px;
+    border-radius: 8px;
+    color: var(--muted);
+  }
+
+  .icon-btn.danger:hover:not(:disabled) {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
   }
 
   .sort {

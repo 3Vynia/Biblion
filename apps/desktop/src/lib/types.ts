@@ -16,6 +16,7 @@ export interface BookQuery {
   favorites_only?: boolean
   reading_only?: boolean
   finished_only?: boolean
+  language?: string | null
   include_missing?: boolean
   sort?: SortBy
   offset: number
@@ -95,6 +96,12 @@ export interface Book {
 }
 
 export interface AuthorEntry {
+  id: number
+  name: string
+  book_count: number
+}
+
+export interface TagEntry {
   id: number
   name: string
   book_count: number
