@@ -12,6 +12,8 @@
   import CollectionsView from './views/CollectionsView.svelte'
   import FormatsView from './views/FormatsView.svelte'
   import SettingsView from './views/SettingsView.svelte'
+  import SubjectsView from './views/SubjectsView.svelte'
+  import ConfirmDialog from './components/ConfirmDialog.svelte'
   import { api, errorMessage } from './lib/api'
   import { READABLE } from './lib/format'
   import { library } from './lib/library.svelte'
@@ -20,6 +22,7 @@
   import { scan } from './lib/scan.svelte'
   import type { Book, BookSummary } from './lib/types'
   import { ui } from './lib/uiSettings.svelte'
+  import { dialog } from './lib/dialog.svelte'
 
   const SEARCH_DEBOUNCE_MS = 180
   const REFRESH_DURING_SCAN_MS = 2500
@@ -79,7 +82,7 @@
   }
 
   function onGlobalKey(e: KeyboardEvent) {
-    if (reading || showScan) return
+    if (reading || showScan || dialog.current) return
     const inField = (e.target as HTMLElement | null)?.closest?.('input, select, textarea')
     if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
       e.preventDefault()
@@ -103,7 +106,7 @@
 <svelte:window onkeydown={onGlobalKey} />
 
 <div class="app" class:with-detail={selectedId !== null}>
-  <Sidebar onfolders={() => (showScan = true)} />
+  <Sidebar />
 
   <div class="main">
     <header class="topbar">
@@ -158,6 +161,8 @@
               <AuthorsView />
             {:else if route.name === 'series'}
               <SeriesView />
+            {:else if route.name === 'subjects'}
+              <SubjectsView />
             {:else if route.name === 'collections'}
               <CollectionsView />
             {:else if route.name === 'formats'}
@@ -183,6 +188,8 @@
 {#if reading}
   <EpubReader book={reading} onclose={closeReader} />
 {/if}
+
+<ConfirmDialog />
 
 <style>
   .app {
