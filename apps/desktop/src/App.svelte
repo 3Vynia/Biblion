@@ -32,6 +32,8 @@
   let search = $state('')
   let selectedId = $state<number | null>(null)
   let reading = $state<Book | null>(null)
+  /** Where to open the reader instead of the saved position (e.g. a quote). */
+  let readingAt = $state<string | undefined>(undefined)
   let showScan = $state(false)
   let startupError = $state<string | null>(null)
 
@@ -70,6 +72,7 @@
       return
     }
     try {
+      readingAt = undefined
       reading = await api.getBook(summary.id)
     } catch {
       selectedId = summary.id // the detail panel shows the error
@@ -186,7 +189,7 @@
 {/if}
 
 {#if reading}
-  <EpubReader book={reading} onclose={closeReader} />
+  <EpubReader book={reading} startAt={readingAt} onclose={closeReader} />
 {/if}
 
 <ConfirmDialog />
