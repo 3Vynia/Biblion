@@ -106,3 +106,15 @@ const ID_LABELS: Record<string, string> = {
 }
 
 export const identifierLabel = (scheme: string) => ID_LABELS[scheme] ?? scheme.toUpperCase()
+
+/** Compact duration for small tiles: "45m", "1h 14m", "12h". */
+export function formatMinutesShort(min: number): string {
+  const m = Math.max(1, Math.round(min))
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  const rest = m % 60
+  return rest && h < 10 ? `${h}h ${rest}m` : `${h}h`
+}
+
+/** "1 image", "12 images". */
+export const plural = (n: number, one: string, many = `${one}s`) => `${n === 1 ? one : many}`

@@ -28,3 +28,19 @@ describe('metadata formatting', () => {
     expect(identifierLabel('mobi-asin')).toBe('MOBI-ASIN')
   })
 })
+
+import { formatMinutesShort, plural } from './format'
+
+describe('compact stats', () => {
+  it('formats short durations', () => {
+    expect(formatMinutesShort(0.2)).toBe('1m')
+    expect(formatMinutesShort(45)).toBe('45m')
+    expect(formatMinutesShort(74)).toBe('1h 14m')
+    expect(formatMinutesShort(720)).toBe('12h')
+  })
+
+  it('picks singular or plural', () => {
+    expect(plural(1, 'image')).toBe('image')
+    expect(plural(4, 'image')).toBe('images')
+  })
+})

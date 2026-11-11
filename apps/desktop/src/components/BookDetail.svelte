@@ -8,13 +8,14 @@
     formatBytes,
     formatCount,
     formatDate,
+    formatMinutesShort,
     formatPublished,
     identifierLabel,
     languageName,
     plainText,
+    plural,
     roleLabel,
   } from '../lib/format'
-  import { formatMinutes } from '../reader/readerSettings'
   import { library } from '../lib/library.svelte'
   import { slideIn } from '../lib/motion'
   import { authorRoute, nav, seriesRoute, tagRoute } from '../lib/nav.svelte'
@@ -60,6 +61,21 @@
     copiedId = value
     setTimeout(() => (copiedId = copiedId === value ? null : copiedId), 1400)
   }
+
+  // Generated stats shown as one row of equal tiles.
+  const statItems = $derived.by(() => {
+    if (!stats || !book) return []
+    const comic = book.format === 'cbz' || book.format === 'cbr'
+    const items: { icon: 'clock' | 'text' | 'reading' | 'image'; value: string; label: string }[] = []
+    if (stats.words > 0) {
+      items.push({ icon: 'clock', value: formatMinutesShort(stats.reading_minutes), label: 'to read' })
+      items.push({ icon: 'text', value: formatCount(stats.words), label: plural(stats.words, 'word') })
+    }
+    if (stats.chapters > 0) items.push({ icon: 'reading', value: formatCount(stats.chapters), label: plural(stats.chapters, 'chapter') })
+    if (stats.images > 0)
+      items.push({ icon: 'image', value: formatCount(stats.images), label: comic ? plural(stats.images, 'page') : plural(stats.images, 'image') })
+    return items
+  })
 
   // Contributors grouped by role: "Translated by A, B".
   const contributorGroups = $derived.by(() => {
@@ -208,27 +224,17 @@
       {/each}
     </div>
 
-    {#if statsState === 'loading' || statsState === 'done'}
-      <div class="stats" class:loading={statsState === 'loading'}>
-        {#if stats && stats.words > 0}
-          <div><Icon name="clock" size={15} /><span>{formatMinutes(stats.reading_minutes)}</span><small>to read</small></div>
-          <div><Icon name="text" size={15} /><span>{formatCount(stats.words)}</span><small>words</small></div>
-        {/if}
-        {#if stats && stats.chapters > 0}
-          <div><Icon name="reading" size={15} /><span>{formatCount(stats.chapters)}</span><small>chapters</small></div>
-        {/if}
-        {#if stats && stats.images > 0}
-          <div>
-            <Icon name="image" size={15} /><span>{formatCount(stats.images)}</span><small
-              >{book.format === 'cbz' || book.format === 'cbr' ? 'pages' : 'images'}</small
-            >
+    {#if statsState === 'loading'}
+      <div class="stats loading" aria-label="Analysing the book"><div class="shimmer"></div></div>
+    {:else if statsState === 'done' && statItems.length}
+      <div class="stats" style:--n={statItems.length}>
+        {#each statItems as item, i (item.label)}
+          <div class="stat" style:animation-delay="{i * 60}ms">
+            <Icon name={item.icon} size={15} />
+            <strong>{item.value}</strong>
+            <small>{item.label}</small>
           </div>
-        {/if}
-        {#if statsState === 'loading'}
-          <div class="shimmer"></div>
-          <div class="shimmer"></div>
-          <div class="shimmer"></div>
-        {/if}
+        {/each}
       </div>
     {/if}
 
@@ -371,39 +377,49 @@
 
   .stats {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
-    gap: 8px;
-    margin-top: 16px;
+    grid-template-columns: repeat(var(--n, 1), 1fr);
+    margin-top: 18px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    overflow: hidden;
   }
 
-  .stats div {
-    display: grid;
-    grid-template-columns: auto 1fr;
+  .stat {
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    column-gap: 6px;
-    padding: 9px 10px;
-    border-radius: 10px;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    gap: 3px;
+    min-width: 0;
+    padding: 12px 4px 10px;
     color: var(--accent);
     animation: settle 420ms var(--ease) both;
   }
 
-  .stats span {
+  .stat + .stat {
+    border-left: 1px solid var(--border);
+  }
+
+  .stat strong {
     color: var(--text);
+    font-size: 15px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
 
-  .stats small {
-    grid-column: 2;
+  .stat small {
     color: var(--muted);
     font-size: 11px;
+    white-space: nowrap;
   }
 
-  .stats .shimmer {
-    height: 50px;
+  .stats.loading {
+    height: 70px;
+  }
+
+  .shimmer {
+    height: 100%;
     background: linear-gradient(90deg, var(--surface-2), var(--bg), var(--surface-2));
     background-size: 200% 100%;
     animation: shimmer 1.2s linear infinite;
@@ -445,7 +461,7 @@
   }
 
   .ident {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 6px;
     max-width: 100%;
@@ -606,7 +622,7 @@
 
   dl {
     display: grid;
-    grid-template-columns: max-content 1fr;
+    grid-template-columns: max-content minmax(0, 1fr);
     gap: 6px 14px;
     margin: 16px 0 0;
     font-size: 13px;
@@ -617,6 +633,7 @@
   }
 
   dd {
+    min-width: 0;
     margin: 0;
     overflow-wrap: anywhere;
   }
