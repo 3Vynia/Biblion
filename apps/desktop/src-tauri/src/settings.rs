@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 pub struct Settings {
     /// Library folders, canonicalised and never nested inside each other.
     pub roots: Vec<PathBuf>,
+    /// Reader preferences (theme, font…). Owned and validated by the UI;
+    /// stored as-is so new options don't need a backend change.
+    pub reader: Option<serde_json::Value>,
 }
 
 impl Settings {
@@ -100,7 +103,7 @@ mod tests {
         let path = tmp.path().join("settings.json");
         assert_eq!(Settings::load(&path), Settings::default());
 
-        let s = Settings { roots: vec![PathBuf::from("/books")] };
+        let s = Settings { roots: vec![PathBuf::from("/books")], reader: Some(serde_json::json!({ "theme": "sepia" })) };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
 

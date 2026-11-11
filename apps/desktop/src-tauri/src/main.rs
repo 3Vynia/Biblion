@@ -59,6 +59,8 @@ fn main() {
             commands::get_roots,
             commands::add_root,
             commands::remove_root,
+            commands::get_reader_settings,
+            commands::set_reader_settings,
             commands::scan,
             commands::cancel_scan,
             commands::is_scanning,
