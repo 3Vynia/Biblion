@@ -145,3 +145,39 @@ export interface CmdError {
   code: string
   message: string
 }
+
+export type AnnotationKind = 'highlight' | 'bookmark'
+
+export interface Annotation {
+  id: number
+  book_id: BookId
+  kind: AnnotationKind
+  /** EPUB CFI (range for highlights, point for bookmarks). */
+  locator: string
+  text: string
+  note: string | null
+  color: string | null
+  chapter: string | null
+  percent: number
+  created_at: number
+  updated_at: number
+}
+
+export type NewAnnotation = Omit<Annotation, 'id' | 'created_at' | 'updated_at'>
+
+export interface AnnotationQuery {
+  book_id?: BookId | null
+  kind?: AnnotationKind | null
+  color?: string | null
+  text?: string | null
+  offset: number
+  limit: number
+}
+
+export interface AnnotationEntry {
+  annotation: Annotation
+  book_title: string
+  book_authors: string[]
+  cover_key: string | null
+  format: Format
+}
