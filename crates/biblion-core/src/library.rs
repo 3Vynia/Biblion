@@ -195,6 +195,11 @@ impl Library {
         self.read(|c| db::book_shelves(c, id))
     }
 
+    /// Takes several books out of a collection (they stay in the library).
+    pub fn remove_many_from_shelf(&self, shelf: i64, books: &[BookId]) -> Result<usize> {
+        self.user_write(|c| db::remove_many_from_shelf(c, shelf, books))
+    }
+
     pub fn list_shelves(&self) -> Result<Vec<Shelf>> {
         self.read(db::list_shelves)
     }

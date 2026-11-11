@@ -385,3 +385,26 @@ fn subjects_languages_and_collection_edits() {
     assert_eq!(lib.stats().unwrap().books, 3);
     assert!(matches!(lib.delete_shelf(shelf), Err(biblion_core::Error::NotFound(_))));
 }
+
+#[test]
+fn remove_many_books_from_a_collection() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    for t in ["One", "Two", "Three"] {
+        write_epub(&books.join(format!("{t}.epub")), t, "Some Author", 1);
+    }
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    scan(&lib, &books);
+    let ids: Vec<i64> = ["one", "two", "three"].iter().map(|t| find(&lib, t)[0].id).collect();
+    let shelf = lib.create_shelf("Mine").unwrap();
+    for id in &ids {
+        lib.add_to_shelf(shelf, *id).unwrap();
+    }
+
+    assert_eq!(lib.remove_many_from_shelf(shelf, &ids[..2]).unwrap(), 2);
+    let left = lib.list_books(&BookQuery { shelf_id: Some(shelf), limit: 10, ..Default::default() }).unwrap();
+    assert_eq!(left.items.iter().map(|b| b.title.as_str()).collect::<Vec<_>>(), ["Three"]);
+    // Books not in the collection are ignored; the library keeps all books.
+    assert_eq!(lib.remove_many_from_shelf(shelf, &ids[..2]).unwrap(), 0);
+    assert_eq!(lib.stats().unwrap().books, 3);
+}
