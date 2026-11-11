@@ -15,6 +15,7 @@ export interface BookQuery {
   format?: Format | null
   favorites_only?: boolean
   reading_only?: boolean
+  finished_only?: boolean
   include_missing?: boolean
   sort?: SortBy
   offset: number
@@ -76,6 +77,18 @@ export interface Book {
   favorite: boolean
   rating: number | null
   progress: ReadingProgress | null
+}
+
+export interface AuthorEntry {
+  id: number
+  name: string
+  book_count: number
+}
+
+export interface Shelf {
+  id: number
+  name: string
+  book_count: number
 }
 
 export interface LibraryStats {

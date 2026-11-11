@@ -2,6 +2,7 @@
 
 import { Channel, convertFileSrc, invoke } from '@tauri-apps/api/core'
 import type {
+  AuthorEntry,
   Book,
   BookId,
   BookQuery,
@@ -11,6 +12,7 @@ import type {
   Page,
   ScanEvent,
   ScanReport,
+  Shelf,
 } from './types'
 
 export const api = {
@@ -29,6 +31,15 @@ export const api = {
   listBooks: (query: BookQuery) => invoke<Page<BookSummary>>('list_books', { query }),
   getBook: (id: BookId) => invoke<Book>('get_book', { id }),
   stats: () => invoke<LibraryStats>('stats'),
+  listAuthors: (prefix: string | null, offset: number, limit: number) =>
+    invoke<Page<AuthorEntry>>('list_authors', { prefix, offset, limit }),
+  listSeries: (offset: number, limit: number) => invoke<Page<[string, number]>>('list_series', { offset, limit }),
+
+  setFavorite: (id: BookId, favorite: boolean) => invoke<void>('set_favorite', { id, favorite }),
+  listShelves: () => invoke<Shelf[]>('list_shelves'),
+  createShelf: (name: string) => invoke<number>('create_shelf', { name }),
+  setInShelf: (shelf: number, book: BookId, member: boolean) => invoke<void>('set_in_shelf', { shelf, book, member }),
+  bookShelves: (id: BookId) => invoke<number[]>('book_shelves', { id }),
 
   setProgress: (id: BookId, locator: string, percent: number, finished: boolean) =>
     invoke<void>('set_progress', { id, locator, percent, finished }),
