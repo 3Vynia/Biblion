@@ -14,6 +14,7 @@
   import { library } from '../lib/library.svelte'
   import { formatCount } from '../lib/format'
   import { scan } from '../lib/scan.svelte'
+  import { ui } from '../lib/uiSettings.svelte'
 
   interface Props {
     onfolders: () => void
@@ -30,6 +31,7 @@
   }
 
   const active = $derived(sectionOf(nav.route))
+  const collapsed = $derived(ui.value.sidebarCollapsed)
 
   const groups = $derived<{ title?: string; items: Item[] }[]>([
     {
@@ -77,10 +79,12 @@
   $effect(() => {
     void active
     void groups
-    queueMicrotask(() => {
+    void collapsed
+    // Wait for the width transition so offsets are final.
+    setTimeout(() => {
       const el = navEl?.querySelector<HTMLElement>(`[data-section="${active}"]`)
       indicator = el ? { top: el.offsetTop, height: el.offsetHeight, visible: true } : { ...indicator, visible: false }
-    })
+    }, 0)
   })
 
   function open(item: Item) {
@@ -89,10 +93,19 @@
   }
 </script>
 
-<aside class="sidebar">
+<aside class="sidebar" class:collapsed>
   <div class="brand">
     <span class="logo" aria-hidden="true"><Icon name="reading" size={18} strokeWidth={2} /></span>
     <span class="name">Biblion</span>
+    <button
+      class="ghost toggle"
+      onclick={() => ui.update({ sidebarCollapsed: !collapsed })}
+      title={collapsed ? 'Show sidebar (Ctrl+B)' : 'Hide sidebar (Ctrl+B)'}
+      aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+      aria-expanded={!collapsed}
+    >
+      <Icon name="panel" size={17} />
+    </button>
   </div>
 
   <nav bind:this={navEl} aria-label="Sections">
@@ -110,6 +123,7 @@
           class:active={active === item.section}
           data-section={item.section}
           aria-current={active === item.section ? 'page' : undefined}
+          title={collapsed ? item.label : undefined}
           onclick={() => open(item)}
         >
           <Icon name={item.icon} size={18} />
@@ -120,7 +134,18 @@
     {/each}
   </nav>
 
-  <button class="folders" onclick={onfolders}>
+  <button
+    class="item settings"
+    class:active={active === 'settings'}
+    data-section="settings"
+    title={collapsed ? 'Settings' : undefined}
+    onclick={() => nav.jump({ name: 'settings' })}
+  >
+    <Icon name="settings" size={18} />
+    <span class="label">Settings</span>
+  </button>
+
+  <button class="folders" onclick={onfolders} title={collapsed ? 'Library folders' : undefined}>
     {#if scan.running}
       <span class="spinner" aria-hidden="true"></span>
       <span class="label">
@@ -139,6 +164,8 @@
     flex-direction: column;
     gap: 6px;
     width: 232px;
+    overflow-x: hidden;
+    transition: width 300ms var(--ease);
     height: 100%;
     padding: 14px 10px 12px;
     background: var(--sidebar);
@@ -150,7 +177,69 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 4px 10px 14px;
+    padding: 4px 4px 14px 10px;
+  }
+
+  .toggle {
+    margin-left: auto;
+    padding: 5px;
+    border-radius: 8px;
+    color: var(--muted);
+  }
+
+  /* Collapsed: an icon rail. Labels fade out instead of wrapping. */
+  .sidebar.collapsed {
+    width: 64px;
+  }
+
+  .collapsed .brand {
+    flex-direction: column;
+    padding: 4px 0 10px;
+    gap: 8px;
+  }
+
+  .collapsed .toggle {
+    margin: 0;
+  }
+
+  .collapsed .name,
+  .collapsed .label,
+  .collapsed .count,
+  .collapsed h2 {
+    opacity: 0;
+    width: 0;
+    pointer-events: none;
+  }
+
+  .collapsed h2 {
+    height: 1px;
+    margin: 10px 8px;
+    background: var(--border);
+  }
+
+  .collapsed .item,
+  .collapsed .folders {
+    justify-content: center;
+    padding: 9px 0;
+    gap: 0;
+  }
+
+  .label,
+  .count,
+  .name,
+  h2 {
+    transition:
+      opacity 200ms ease,
+      width 300ms var(--ease);
+    white-space: nowrap;
+  }
+
+  .settings {
+    margin-top: 4px;
+  }
+
+  .settings.active {
+    background: var(--accent-soft);
   }
 
   .logo {
