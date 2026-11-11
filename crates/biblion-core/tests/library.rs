@@ -184,3 +184,32 @@ fn user_writes_do_not_wait_for_a_scan() {
     assert_eq!(book.progress.unwrap().locator, "epubcfi(/6/2)");
     assert!(book.favorite);
 }
+
+#[test]
+fn finished_filter_and_book_shelves() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    for (i, t) in ["Alpha", "Beta", "Gamma"].iter().enumerate() {
+        write_epub(&books.join(format!("{t}.epub")), t, "Some Author", i as u8);
+    }
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    scan(&lib, &books);
+    let id = |t: &str| find(&lib, t)[0].id;
+
+    lib.set_progress(id("alpha"), "a", 0.4, false).unwrap();
+    lib.set_progress(id("beta"), "b", 1.0, true).unwrap();
+    let list = |q: BookQuery| lib.list_books(&q).unwrap();
+    let reading = list(BookQuery { reading_only: true, limit: 10, ..Default::default() });
+    let finished = list(BookQuery { finished_only: true, limit: 10, ..Default::default() });
+    assert_eq!((reading.total, reading.items[0].title.as_str()), (1, "Alpha"));
+    assert_eq!((finished.total, finished.items[0].title.as_str()), (1, "Beta"));
+
+    let to_read = lib.create_shelf("To read").unwrap();
+    let other = lib.create_shelf("Classics").unwrap();
+    lib.add_to_shelf(to_read, id("gamma")).unwrap();
+    lib.add_to_shelf(other, id("gamma")).unwrap();
+    let mut shelves = lib.book_shelves(id("gamma")).unwrap();
+    shelves.sort();
+    assert_eq!(shelves, vec![to_read, other]);
+    assert!(lib.book_shelves(id("alpha")).unwrap().is_empty());
+}

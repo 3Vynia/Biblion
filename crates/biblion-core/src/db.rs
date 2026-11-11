@@ -417,6 +417,9 @@ pub fn list_books(conn: &Connection, q: &BookQuery) -> Result<Page<BookSummary>>
     if q.reading_only {
         wheres.push("p.book_id IS NOT NULL AND p.finished = 0".into());
     }
+    if q.finished_only {
+        wheres.push("p.finished = 1".into());
+    }
     if !q.include_missing {
         wheres.push("b.missing = 0".into());
     }
@@ -433,7 +436,7 @@ pub fn list_books(conn: &Connection, q: &BookQuery) -> Result<Page<BookSummary>>
     let limit = if q.limit == 0 { 100 } else { q.limit.min(1000) };
 
     // The JOIN with progress only affects the count when filtering by "reading".
-    let count_joins = if q.reading_only { joins.clone() } else { joins.replace(" LEFT JOIN progress p ON p.book_id = b.id", "") };
+    let count_joins = if q.reading_only || q.finished_only { joins.clone() } else { joins.replace(" LEFT JOIN progress p ON p.book_id = b.id", "") };
     let count_sql = format!("SELECT COUNT(*) FROM books b{count_joins}{where_sql}");
     let total: i64 = conn.prepare_cached(&count_sql)?.query_row(params_from_iter(args.iter()), |r| r.get(0))?;
 
@@ -525,6 +528,12 @@ pub fn list_series(conn: &Connection, offset: u32, limit: u32) -> Result<Page<(S
         .query_map(params![limit.clamp(1, 1000), offset], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? as u64)))?
         .collect::<std::result::Result<_, _>>()?;
     Ok(Page { items, total: total as u64, offset })
+}
+
+pub fn book_shelves(conn: &Connection, book: BookId) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare_cached("SELECT shelf_id FROM shelf_books WHERE book_id = ?1")?;
+    let ids = stmt.query_map([book], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
+    Ok(ids)
 }
 
 pub fn create_shelf(conn: &Connection, name: &str) -> Result<i64> {
