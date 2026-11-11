@@ -123,12 +123,14 @@
   const detailFloats = $derived(windowWidth - sidebarWidth - DETAIL_WIDTH < MIN_CONTENT)
 
   const route = $derived(nav.route)
+  /** The book panel belongs to screens where books are picked. */
+  const showDetail = $derived(selectedId !== null && (!!search || route.name === 'home' || route.name === 'books'))
   const viewKey = $derived(search ? `search:${search}` : routeKey(route))
 </script>
 
 <svelte:window onkeydown={onGlobalKey} bind:innerWidth={windowWidth} />
 
-<div class="app" class:with-detail={selectedId !== null && !detailFloats}>
+<div class="app" class:with-detail={showDetail && !detailFloats}>
   <Sidebar />
 
   <div class="main">
@@ -201,12 +203,12 @@
     </main>
   </div>
 
-  {#if selectedId !== null && !detailFloats}
+  {#if showDetail && selectedId !== null && !detailFloats}
     <BookDetail id={selectedId} onread={(b) => (reading = b)} onclose={() => (selectedId = null)} />
   {/if}
 </div>
 
-{#if selectedId !== null && detailFloats}
+{#if showDetail && selectedId !== null && detailFloats}
   <div class="scrim" role="presentation" onclick={() => (selectedId = null)}></div>
   <div class="drawer">
     <BookDetail id={selectedId} onread={(b) => (reading = b)} onclose={() => (selectedId = null)} />
