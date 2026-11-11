@@ -46,3 +46,18 @@ test('no runtime errors while browsing', async ({ page }) => {
   }
   expect(errors).toEqual([])
 })
+
+test('in a narrow window the book panel floats and the grid keeps its columns', async ({ page }) => {
+  await page.setViewportSize({ width: 950, height: 1000 })
+  await page.getByRole('button', { name: /All books/ }).click()
+  await page.locator('.cell .card').first().click()
+  await expect(page.locator('.drawer').getByRole('complementary', { name: 'Book details' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'All books', level: 1 })).toBeVisible()
+  const columns = await page.locator('.cell').evaluateAll((cells) => new Set(cells.map((c) => c.getBoundingClientRect().top)).size)
+  expect(columns).toBeGreaterThan(0)
+  const cardWidth = await page.locator('.cell').first().evaluate((el) => el.getBoundingClientRect().width)
+  expect(cardWidth).toBeLessThan(210)
+  // Clicking outside closes it.
+  await page.locator('.scrim').click({ position: { x: 10, y: 500 } })
+  await expect(page.locator('.drawer')).toHaveCount(0)
+})
