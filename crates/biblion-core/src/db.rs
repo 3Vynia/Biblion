@@ -676,6 +676,20 @@ pub fn add_to_shelf(conn: &Connection, shelf: i64, book: BookId) -> Result<()> {
     Ok(())
 }
 
+/// Removes several books from a collection at once. Returns how many were in it.
+pub fn remove_many_from_shelf(conn: &mut Connection, shelf: i64, books: &[BookId]) -> Result<usize> {
+    let tx = conn.transaction()?;
+    let mut removed = 0;
+    {
+        let mut stmt = tx.prepare_cached("DELETE FROM shelf_books WHERE shelf_id=?1 AND book_id=?2")?;
+        for book in books {
+            removed += stmt.execute(params![shelf, book])?;
+        }
+    }
+    tx.commit()?;
+    Ok(removed)
+}
+
 pub fn remove_from_shelf(conn: &Connection, shelf: i64, book: BookId) -> Result<()> {
     conn.execute("DELETE FROM shelf_books WHERE shelf_id=?1 AND book_id=?2", params![shelf, book])?;
     Ok(())
