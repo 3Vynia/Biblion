@@ -30,6 +30,7 @@ crossbeam-channel = "0.5"
 clap = { version = "4", features = ["derive", "env"] }
 flate2 = "1"
 tar = { version = "0.4", default-features = false }
+lzma-rs = "0.3"
 
 [profile.release]
 lto = "thin"
