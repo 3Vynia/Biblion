@@ -4,8 +4,9 @@
   // from a PageCache that loads pages of 200 books on demand.
   import type { PageCache } from '../lib/pageCache'
   import type { BookSummary } from '../lib/types'
-  import { GAP, gridMetrics, visibleRows } from '../lib/gridLayout'
+  import { CAPTION, GAP, gridMetrics, visibleRows } from '../lib/gridLayout'
   import BookCover from './BookCover.svelte'
+  import { COVER_WIDTH, ui } from '../lib/uiSettings.svelte'
 
   interface Props {
     cache: PageCache<BookSummary>
@@ -26,7 +27,8 @@
   let scrollTop = $state(0)
 
   const total = $derived.by(() => (void version, cache.total ?? 0))
-  const metrics = $derived(gridMetrics(width - PADDING * 2, total))
+  const captions = $derived(ui.value.showCaptions)
+  const metrics = $derived(gridMetrics(width - PADDING * 2, total, COVER_WIDTH[ui.value.coverSize], captions ? CAPTION : 0))
   const range = $derived(visibleRows(metrics, Math.max(0, scrollTop - PADDING), height))
 
   $effect(() => {
@@ -99,10 +101,12 @@
               {/if}
               <span class="badge">{book.format.toUpperCase()}</span>
             </div>
-            <div class="caption">
-              <div class="title">{book.title}</div>
-              <div class="author">{book.authors.join(', ') || 'Unknown author'}</div>
-            </div>
+            {#if captions}
+              <div class="caption">
+                <div class="title">{book.title}</div>
+                <div class="author">{book.authors.join(', ') || 'Unknown author'}</div>
+              </div>
+            {/if}
           </button>
         {:else}
           <div class="skeleton" style:height="{metrics.coverHeight}px"></div>

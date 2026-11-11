@@ -14,12 +14,12 @@ export const GAP = 20
 export const CAPTION = 52
 export const COVER_RATIO = 1.5 // 360x540 thumbnails
 
-export function gridMetrics(width: number, total: number, minCard = 150): GridMetrics {
+export function gridMetrics(width: number, total: number, minCard = 150, caption = CAPTION): GridMetrics {
   const usable = Math.max(1, width)
   const columns = Math.max(1, Math.floor((usable + GAP) / (minCard + GAP)))
   const cardWidth = (usable - GAP * (columns - 1)) / columns
   const coverHeight = Math.round(cardWidth * COVER_RATIO)
-  const rowHeight = coverHeight + CAPTION + GAP
+  const rowHeight = coverHeight + caption + GAP
   const rows = Math.ceil(Math.max(0, total) / columns)
   return { columns, cardWidth, coverHeight, rowHeight, rows, totalHeight: rows * rowHeight }
 }
