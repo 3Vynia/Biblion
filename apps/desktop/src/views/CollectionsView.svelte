@@ -5,7 +5,6 @@
   import { library } from '../lib/library.svelte'
   import { rise } from '../lib/motion'
   import { favorites, finished, nav, readingNow, shelfRoute } from '../lib/nav.svelte'
-  import { deleteCollection, renameCollection } from '../lib/collections'
 
   let creating = $state(false)
   let newName = $state('')
@@ -96,8 +95,6 @@
           query={{ shelf_id: shelf.id, sort: 'added_desc' }}
           tint={TINTS[shelf.id % TINTS.length]}
           onclick={() => nav.go(shelfRoute(shelf.id, shelf.name))}
-          onrename={() => renameCollection(shelf)}
-          ondelete={() => deleteCollection(shelf)}
         />
       </div>
     {/each}
