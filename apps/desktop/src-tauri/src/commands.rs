@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
-use biblion_core::{AuthorEntry, Book, BookId, BookStats, BookQuery, BookSummary, Library, LibraryStats, Page, Shelf};
+use biblion_core::{AuthorEntry, Book, BookId, BookStats, BookQuery, BookSummary, Library, LibraryStats, Page, Shelf, TagEntry};
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -250,20 +250,58 @@ pub async fn list_shelves(state: State<'_, AppState>) -> CmdResult<Vec<Shelf>> {
     blocking(move || lib.list_shelves()).await
 }
 
-#[tauri::command]
-pub async fn create_shelf(state: State<'_, AppState>, name: String) -> CmdResult<i64> {
+fn collection_name(name: &str) -> CmdResult<String> {
     let name = name.trim().to_owned();
     if name.is_empty() || name.chars().count() > 80 {
         return Err(CmdError::new("invalid_argument", "Collection names must have 1 to 80 characters"));
     }
+    Ok(name)
+}
+
+fn unique_name_error(e: CmdError) -> CmdError {
+    if e.message.contains("UNIQUE") {
+        CmdError::new("already_exists", "A collection with that name already exists")
+    } else {
+        e
+    }
+}
+
+#[tauri::command]
+pub async fn create_shelf(state: State<'_, AppState>, name: String) -> CmdResult<i64> {
+    let name = collection_name(&name)?;
     let lib = state.lib.clone();
-    blocking(move || lib.create_shelf(&name)).await.map_err(|e| {
-        if e.message.contains("UNIQUE") {
-            CmdError::new("already_exists", "A collection with that name already exists")
-        } else {
-            e
-        }
-    })
+    blocking(move || lib.create_shelf(&name)).await.map_err(unique_name_error)
+}
+
+#[tauri::command]
+pub async fn rename_shelf(state: State<'_, AppState>, id: i64, name: String) -> CmdResult<()> {
+    let name = collection_name(&name)?;
+    let lib = state.lib.clone();
+    blocking(move || lib.rename_shelf(id, &name)).await.map_err(unique_name_error)
+}
+
+#[tauri::command]
+pub async fn delete_shelf(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+    let lib = state.lib.clone();
+    blocking(move || lib.delete_shelf(id)).await
+}
+
+#[tauri::command]
+pub async fn list_tags(
+    state: State<'_, AppState>,
+    prefix: Option<String>,
+    offset: u32,
+    limit: u32,
+) -> CmdResult<Page<TagEntry>> {
+    let lib = state.lib.clone();
+    let limit = limit.clamp(1, MAX_PAGE);
+    blocking(move || lib.list_tags(prefix.as_deref().filter(|p| !p.trim().is_empty()), offset, limit)).await
+}
+
+#[tauri::command]
+pub async fn list_languages(state: State<'_, AppState>) -> CmdResult<Vec<(String, u64)>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.list_languages()).await
 }
 
 #[tauri::command]
