@@ -2,3 +2,5 @@
 // footnotes.js exports FootnoteHandler. Both are used untyped.
 declare module '*/foliate-js/view.js'
 declare module '*/foliate-js/footnotes.js'
+declare module '*/foliate-js/overlayer.js'
+declare module '*/foliate-js/epubcfi.js'
