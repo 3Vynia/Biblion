@@ -5,6 +5,7 @@
 
 pub mod covers;
 pub mod db;
+pub mod dictionary;
 pub mod error;
 pub mod formats;
 pub mod library;

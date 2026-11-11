@@ -27,6 +27,8 @@ jpeg-encoder.workspace = true
 walkdir.workspace = true
 rayon.workspace = true
 crossbeam-channel.workspace = true
+flate2.workspace = true
+tar.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
