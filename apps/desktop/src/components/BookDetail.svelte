@@ -2,11 +2,23 @@
   import BookCover from './BookCover.svelte'
   import Icon from './Icon.svelte'
   import { api, errorMessage } from '../lib/api'
-  import { FORMAT_LABEL, READABLE, formatBytes, formatDate, plainText } from '../lib/format'
+  import {
+    FORMAT_LABEL,
+    READABLE,
+    formatBytes,
+    formatCount,
+    formatDate,
+    formatPublished,
+    identifierLabel,
+    languageName,
+    plainText,
+    roleLabel,
+  } from '../lib/format'
+  import { formatMinutes } from '../reader/readerSettings'
   import { library } from '../lib/library.svelte'
   import { slideIn } from '../lib/motion'
-  import { authorRoute, nav, seriesRoute } from '../lib/nav.svelte'
-  import type { Book } from '../lib/types'
+  import { authorRoute, nav, seriesRoute, tagRoute } from '../lib/nav.svelte'
+  import type { Book, BookStats } from '../lib/types'
 
   interface Props {
     id: number
@@ -20,13 +32,50 @@
   let error = $state<string | null>(null)
   let memberOf = $state<number[]>([])
   let heartPop = $state(0)
+  let stats = $state<BookStats | null>(null)
+  let statsState = $state<'idle' | 'loading' | 'done' | 'unavailable'>('idle')
+  let copiedId = $state<string | null>(null)
+
+  const ANALYZABLE = new Set(['epub', 'cbz', 'cbr'])
+
+  async function analyze(b: Book) {
+    stats = null
+    if (!ANALYZABLE.has(b.format) || b.missing) {
+      statsState = 'unavailable'
+      return
+    }
+    statsState = 'loading'
+    try {
+      const s = await api.analyzeBook(b.id)
+      if (b.id !== id) return
+      stats = s
+      statsState = 'done'
+    } catch {
+      if (b.id === id) statsState = 'unavailable'
+    }
+  }
+
+  async function copy(value: string) {
+    await navigator.clipboard?.writeText(value).catch(() => {})
+    copiedId = value
+    setTimeout(() => (copiedId = copiedId === value ? null : copiedId), 1400)
+  }
+
+  // Contributors grouped by role: "Translated by A, B".
+  const contributorGroups = $derived.by(() => {
+    const groups = new Map<string, string[]>()
+    for (const c of book?.metadata.contributors ?? []) groups.set(c.role, [...(groups.get(c.role) ?? []), c.name])
+    return [...groups].map(([role, names]) => ({ label: roleLabel(role), names }))
+  })
 
   async function load(current: number) {
     try {
       const [b, shelves] = await Promise.all([api.getBook(current), api.bookShelves(current)])
       if (current !== id) return
+      const first = book?.id !== b.id
       book = b
       memberOf = shelves
+      if (first) analyze(b)
     } catch (e) {
       if (current === id) error = errorMessage(e)
     }
@@ -99,6 +148,7 @@
     </div>
 
     <h2>{title}</h2>
+    {#if m.subtitle}<p class="subtitle">{m.subtitle}</p>{/if}
     <p class="authors">
       {#each m.authors as author, i (author)}
         <button class="link" onclick={() => openAuthor(author)}>{author}</button>{i < m.authors.length - 1 ? ', ' : ''}
@@ -106,6 +156,9 @@
         <span class="muted">Unknown author</span>
       {/each}
     </p>
+    {#each contributorGroups as g (g.label)}
+      <p class="contributors"><span class="muted">{g.label}</span> {g.names.join(', ')}</p>
+    {/each}
     {#if m.series}
       <button class="link series" onclick={() => nav.go(seriesRoute(m.series!))}>
         <Icon name="layers" size={14} />
@@ -155,19 +208,68 @@
       {/each}
     </div>
 
+    {#if statsState === 'loading' || statsState === 'done'}
+      <div class="stats" class:loading={statsState === 'loading'}>
+        {#if stats && stats.words > 0}
+          <div><Icon name="clock" size={15} /><span>{formatMinutes(stats.reading_minutes)}</span><small>to read</small></div>
+          <div><Icon name="text" size={15} /><span>{formatCount(stats.words)}</span><small>words</small></div>
+        {/if}
+        {#if stats && stats.chapters > 0}
+          <div><Icon name="reading" size={15} /><span>{formatCount(stats.chapters)}</span><small>chapters</small></div>
+        {/if}
+        {#if stats && stats.images > 0}
+          <div>
+            <Icon name="image" size={15} /><span>{formatCount(stats.images)}</span><small
+              >{book.format === 'cbz' || book.format === 'cbr' ? 'pages' : 'images'}</small
+            >
+          </div>
+        {/if}
+        {#if statsState === 'loading'}
+          <div class="shimmer"></div>
+          <div class="shimmer"></div>
+          <div class="shimmer"></div>
+        {/if}
+      </div>
+    {/if}
+
     {#if description}
+      <h3>About this book</h3>
       <p class="description">{description}</p>
     {/if}
+
+    {#if m.tags.length}
+      <div class="tags">
+        {#each m.tags as tag (tag)}
+          <button class="tag" onclick={() => nav.go(tagRoute(tag))}><Icon name="tag" size={12} /> {tag}</button>
+        {/each}
+      </div>
+    {/if}
+
+    <h3>Details</h3>
 
     <dl>
       <dt>Format</dt>
       <dd>{FORMAT_LABEL[book.format]} · {formatBytes(book.size)}</dd>
+      {#if m.format_version}<dt>Edition</dt><dd>{m.format_version}</dd>{/if}
       {#if m.publisher}<dt>Publisher</dt><dd>{m.publisher}</dd>{/if}
-      {#if m.published}<dt>Published</dt><dd>{m.published}</dd>{/if}
-      {#if m.language}<dt>Language</dt><dd>{m.language}</dd>{/if}
-      {#if m.page_count}<dt>Pages</dt><dd>{m.page_count}</dd>{/if}
-      {#if m.isbn}<dt>ISBN</dt><dd>{m.isbn}</dd>{/if}
-      {#if m.tags.length}<dt>Tags</dt><dd>{m.tags.join(', ')}</dd>{/if}
+      {#if m.published}<dt>Published</dt><dd>{formatPublished(m.published)}</dd>{/if}
+      {#if m.language}<dt>Language</dt><dd>{languageName(m.language)}</dd>{/if}
+      {#if m.page_count}<dt>Pages</dt><dd>{formatCount(m.page_count)}</dd>{/if}
+      {#if m.modified}<dt>Revised</dt><dd>{formatPublished(m.modified)}</dd>{/if}
+      {#if m.rights}<dt>Rights</dt><dd>{m.rights}</dd>{/if}
+      {#if m.source}<dt>Source</dt><dd class="small-text">{m.source}</dd>{/if}
+      {#if m.identifiers?.length || m.isbn}
+        <dt>Identifiers</dt>
+        <dd class="ids">
+          {#each m.identifiers?.length ? m.identifiers : [{ scheme: 'isbn', value: m.isbn ?? '' }] as ident (ident.scheme + ident.value)}
+            <button class="ident" onclick={() => copy(ident.value)} title="Copy {identifierLabel(ident.scheme)}">
+              <span class="scheme">{identifierLabel(ident.scheme)}</span>
+              <span class="value">{ident.value}</span>
+              <Icon name={copiedId === ident.value ? 'check' : 'copy'} size={12} />
+            </button>
+          {/each}
+        </dd>
+      {/if}
       <dt>Added</dt>
       <dd>{formatDate(book.added_at)}</dd>
       <dt>File</dt>
@@ -243,6 +345,136 @@
   .authors {
     margin: 0;
     font-size: 15px;
+  }
+
+  .subtitle {
+    margin: -2px 0 8px;
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--muted);
+    font-size: 15px;
+  }
+
+  .contributors {
+    margin: 4px 0 0;
+    font-size: 13px;
+  }
+
+  h3 {
+    margin: 22px 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .stats div {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    column-gap: 6px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    animation: settle 420ms var(--ease) both;
+  }
+
+  .stats span {
+    color: var(--text);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .stats small {
+    grid-column: 2;
+    color: var(--muted);
+    font-size: 11px;
+  }
+
+  .stats .shimmer {
+    height: 50px;
+    background: linear-gradient(90deg, var(--surface-2), var(--bg), var(--surface-2));
+    background-size: 200% 100%;
+    animation: shimmer 1.2s linear infinite;
+  }
+
+  @keyframes shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    background: var(--bg);
+  }
+
+  .tag:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .ids {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .ident {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    text-align: left;
+    color: var(--muted);
+  }
+
+  .ident .scheme {
+    font-weight: 700;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+
+  .ident .value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-family: ui-monospace, monospace;
+  }
+
+  .small-text {
+    font-size: 12px;
   }
 
   .link {
@@ -368,8 +600,8 @@
 
   .description {
     white-space: pre-line;
-    line-height: 1.55;
-    margin: 18px 0;
+    line-height: 1.6;
+    margin: 0;
   }
 
   dl {
