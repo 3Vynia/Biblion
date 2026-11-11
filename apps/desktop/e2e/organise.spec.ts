@@ -82,3 +82,50 @@ test('the compact sidebar centres its icons and has no folders button', async ({
     expect(Math.abs(box.x + box.width / 2 - centre)).toBeLessThanOrEqual(1.5)
   }
 })
+
+test('books can be taken out of a collection, after confirming', async ({ page }) => {
+  // Put three books in "To read" from the book panel.
+  await page.getByRole('button', { name: /All books/ }).click()
+  for (const n of [0, 1, 2]) {
+    await page.locator('.cell .card').nth(n).click()
+    await page.getByRole('complementary', { name: 'Book details' }).getByRole('button', { name: 'To read' }).click()
+  }
+  await page.getByRole('button', { name: /To read/ }).first().click()
+  await expect(page.locator('.books .count')).toHaveText('3 books')
+
+  // Collection cards stay clean: no edit buttons on hover.
+  await page.getByRole('button', { name: /Collections/ }).click()
+  await expect(page.getByRole('button', { name: /^(Rename|Delete) / })).toHaveCount(0)
+  await page.locator('.tile', { hasText: 'To read' }).click()
+
+  await page.getByRole('button', { name: 'Select books' }).click()
+  await page.locator('.cell .card').nth(0).click()
+  await page.locator('.cell .card').nth(1).click()
+  await expect(page.getByRole('toolbar', { name: 'Selection' })).toContainText('2 books selected')
+
+  await page.getByRole('button', { name: 'Remove from collection' }).click()
+  await expect(page.getByRole('alertdialog')).toContainText('Remove 2 books from “To read”?')
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect(page.locator('.books .count')).toHaveText('3 books')
+
+  await page.getByRole('button', { name: 'Remove from collection' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove from collection' }).click()
+  await expect(page.locator('.books .count')).toHaveText('1 book')
+  await expect(page.getByRole('toolbar', { name: 'Selection' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /All books/ })).toContainText('3,000')
+})
+
+test('select all picks every book, Esc leaves selection', async ({ page }) => {
+  await page.getByRole('button', { name: /All books/ }).click()
+  for (const n of [0, 1]) {
+    await page.locator('.cell .card').nth(n).click()
+    await page.getByRole('complementary', { name: 'Book details' }).getByRole('button', { name: 'To read' }).click()
+  }
+  await page.getByRole('button', { name: /To read/ }).first().click()
+  await page.getByRole('button', { name: 'Select books' }).click()
+  await page.getByRole('button', { name: 'Select all' }).click()
+  await expect(page.getByRole('toolbar', { name: 'Selection' })).toContainText('2 books selected')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('toolbar', { name: 'Selection' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'To read', level: 1 })).toBeVisible()
+})
