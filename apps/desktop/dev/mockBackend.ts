@@ -183,6 +183,13 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       else set.delete(args.book as number)
       return null
     }
+    case 'remove_from_shelf': {
+      const set = shelfBooks.get(args.shelf as number)
+      if (!set) throw { code: 'not_found', message: 'not found' }
+      let removed = 0
+      for (const id of args.books as number[]) removed += set.delete(id) ? 1 : 0
+      return removed
+    }
     case 'rename_shelf': {
       const s = shelves.find((x) => x.id === args.id)
       if (!s) throw { code: 'not_found', message: 'not found' }
