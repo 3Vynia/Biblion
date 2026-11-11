@@ -143,7 +143,7 @@
     </label>
     <span class="count muted">
       {#if total !== null}
-        {formatCount(total)}{search.trim() ? ' results' : ' books'}
+        {formatCount(total)}{search.trim() ? (total === 1 ? ' result' : ' results') : total === 1 ? ' book' : ' books'}
       {/if}
     </span>
     <button class="scan-button" onclick={() => (showScan = true)}>
