@@ -35,6 +35,9 @@
     filter: 'M3 5h18l-7 8v6l-4 2v-8z',
     select: 'M4 4h16v16H4zM8 12l3 3 5-6',
     minus: 'M5 12h14',
+    quote: 'M7 7h4v4c0 3-1.5 5-4 6M15 7h4v4c0 3-1.5 5-4 6',
+    note: 'M5 4h14v12l-4 4H5zM15 20v-4h4M8 9h8M8 13h5',
+    bookmarkFill: 'M6 3h12v18l-6-4.5L6 21z',
     globe: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z',
   } as const
 
