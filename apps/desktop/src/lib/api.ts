@@ -2,6 +2,9 @@
 
 import { Channel, convertFileSrc, invoke } from '@tauri-apps/api/core'
 import type {
+  Annotation,
+  AnnotationEntry,
+  AnnotationQuery,
   AuthorEntry,
   Book,
   BookId,
@@ -10,6 +13,7 @@ import type {
   BookSummary,
   CmdError,
   LibraryStats,
+  NewAnnotation,
   Page,
   ScanEvent,
   ScanReport,
@@ -51,6 +55,14 @@ export const api = {
 
   setProgress: (id: BookId, locator: string, percent: number, finished: boolean) =>
     invoke<void>('set_progress', { id, locator, percent, finished }),
+
+  addAnnotation: (annotation: NewAnnotation) => invoke<number>('add_annotation', { annotation }),
+  updateAnnotation: (id: number, note: string | null, color: string | null) =>
+    invoke<void>('update_annotation', { id, note, color }),
+  deleteAnnotation: (id: number) => invoke<void>('delete_annotation', { id }),
+  bookAnnotations: (id: BookId) => invoke<Annotation[]>('book_annotations', { id }),
+  listAnnotations: (query: AnnotationQuery) => invoke<Page<AnnotationEntry>>('list_annotations', { query }),
+  annotationCounts: () => invoke<[number, number]>('annotation_counts'),
 
   analyzeBook: (id: BookId) => invoke<BookStats>('analyze_book', { id }),
   getUiSettings: () => invoke<unknown>('get_ui_settings'),
