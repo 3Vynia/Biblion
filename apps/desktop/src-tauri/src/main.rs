@@ -85,6 +85,12 @@ fn main() {
             commands::remove_from_shelf,
             commands::book_shelves,
             commands::set_progress,
+            commands::add_annotation,
+            commands::update_annotation,
+            commands::delete_annotation,
+            commands::book_annotations,
+            commands::list_annotations,
+            commands::annotation_counts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Biblion");

@@ -9,7 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
-use biblion_core::{AuthorEntry, Book, BookId, BookStats, BookQuery, BookSummary, Library, LibraryStats, Page, Shelf, TagEntry};
+use biblion_core::{
+    Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, Book, BookId, BookQuery, BookStats, BookSummary,
+    Library, LibraryStats, NewAnnotation, Page, Shelf, TagEntry,
+};
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -78,8 +81,7 @@ fn update_settings<T>(state: &AppState, f: impl FnOnce(&mut Settings) -> Result<
     let mut settings = state.settings.lock().unwrap();
     let mut next = settings.clone();
     f(&mut next).map_err(|m| CmdError::new("invalid_folder", m))?;
-    next.save(&state.settings_path)
-        .map_err(|e| CmdError::new("io", format!("cannot save settings: {e}")))?;
+    next.save(&state.settings_path).map_err(|e| CmdError::new("io", format!("cannot save settings: {e}")))?;
     *settings = next;
     Ok(settings.roots.clone())
 }
@@ -326,6 +328,49 @@ pub async fn remove_from_shelf(state: State<'_, AppState>, shelf: i64, books: Ve
 pub async fn book_shelves(state: State<'_, AppState>, id: BookId) -> CmdResult<Vec<i64>> {
     let lib = state.lib.clone();
     blocking(move || lib.book_shelves(id)).await
+}
+
+// ── Highlights, notes and bookmarks ──────────────────────────────────────
+
+#[tauri::command]
+pub async fn add_annotation(state: State<'_, AppState>, annotation: NewAnnotation) -> CmdResult<i64> {
+    let lib = state.lib.clone();
+    blocking(move || lib.add_annotation(&annotation)).await
+}
+
+#[tauri::command]
+pub async fn update_annotation(
+    state: State<'_, AppState>,
+    id: i64,
+    note: Option<String>,
+    color: Option<String>,
+) -> CmdResult<()> {
+    let lib = state.lib.clone();
+    blocking(move || lib.update_annotation(id, note.as_deref(), color.as_deref())).await
+}
+
+#[tauri::command]
+pub async fn delete_annotation(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+    let lib = state.lib.clone();
+    blocking(move || lib.delete_annotation(id)).await
+}
+
+#[tauri::command]
+pub async fn book_annotations(state: State<'_, AppState>, id: BookId) -> CmdResult<Vec<Annotation>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.book_annotations(id)).await
+}
+
+#[tauri::command]
+pub async fn list_annotations(state: State<'_, AppState>, query: AnnotationQuery) -> CmdResult<Page<AnnotationEntry>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.list_annotations(&query)).await
+}
+
+#[tauri::command]
+pub async fn annotation_counts(state: State<'_, AppState>) -> CmdResult<(u64, u64)> {
+    let lib = state.lib.clone();
+    blocking(move || lib.annotation_counts()).await
 }
 
 // ── Reading ──────────────────────────────────────────────────────────────
