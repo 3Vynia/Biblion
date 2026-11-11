@@ -238,6 +238,153 @@ fn parse_identifier(n: &Node, refined_type: Option<String>) -> Option<Identifier
     Some(Identifier { scheme, value })
 }
 
+/// Upper bounds for analysis, against huge or malicious files.
+const MAX_SECTION_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_TEXT_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Counts words, characters, chapters and images of an EPUB.
+pub fn analyze(path: &Path) -> Result<crate::BookStats> {
+    let mut zip = open(path)?;
+    let opf_name = opf_path(&mut zip)?;
+    let opf_dir = opf_name.rsplit_once('/').map(|(d, _)| d).unwrap_or("").to_owned();
+    let opf_bytes = read_entry(&mut zip, &opf_name, MAX_META_BYTES)?;
+    let opf_str = String::from_utf8_lossy(&opf_bytes);
+    let doc = Document::parse_with_options(strip_bom(&opf_str), roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() })
+        .map_err(|e| Error::corrupt("epub", e))?;
+
+    let manifest: Vec<Node> = doc.descendants().filter(|n| local(n) == "item").collect();
+    let href_of = |id: &str| manifest.iter().find(|n| n.attribute("id") == Some(id)).and_then(|n| n.attribute("href"));
+    let images = manifest
+        .iter()
+        .filter(|n| n.attribute("media-type").is_some_and(|t| t.starts_with("image/")))
+        .count() as u32;
+    let spine_node = doc.descendants().find(|n| local(n) == "spine");
+    let spine: Vec<String> = doc
+        .descendants()
+        .filter(|n| local(n) == "itemref")
+        .filter_map(|n| n.attribute("idref"))
+        .filter_map(href_of)
+        .map(|h| resolve_zip_path(&opf_dir, h))
+        .collect();
+
+    let (mut words, mut characters, mut total) = (0u64, 0u64, 0u64);
+    for section in &spine {
+        let Ok(bytes) = read_entry(&mut zip, section, MAX_SECTION_BYTES) else { continue };
+        total += bytes.len() as u64;
+        if total > MAX_TEXT_BYTES {
+            break;
+        }
+        let (w, c) = count_text(&String::from_utf8_lossy(&bytes));
+        words += w;
+        characters += c;
+    }
+
+    // Chapters: EPUB3 nav, else the EPUB2 NCX, else the number of sections.
+    let nav = manifest
+        .iter()
+        .find(|n| n.attribute("properties").is_some_and(|p| p.split_whitespace().any(|x| x == "nav")))
+        .and_then(|n| n.attribute("href"))
+        .and_then(|h| read_entry(&mut zip, &resolve_zip_path(&opf_dir, h), MAX_META_BYTES).ok())
+        .map(|b| count_toc_entries(&String::from_utf8_lossy(&b), "a"));
+    let mut ncx = || {
+        let id = spine_node?.attribute("toc")?;
+        let href = href_of(id)?;
+        let bytes = read_entry(&mut zip, &resolve_zip_path(&opf_dir, href), MAX_META_BYTES).ok()?;
+        Some(count_toc_entries(&String::from_utf8_lossy(&bytes), "navPoint"))
+    };
+    let chapters = nav.filter(|&n| n > 0).or_else(|| ncx().filter(|&n| n > 0)).unwrap_or(spine.len() as u32);
+
+    Ok(crate::BookStats::new(words, characters, chapters, images))
+}
+
+/// Entries of a table of contents: `<a>` inside the toc `<nav>`, or NCX navPoints.
+fn count_toc_entries(xml: &str, entry: &str) -> u32 {
+    let Ok(doc) = Document::parse_with_options(strip_bom(xml), roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() })
+    else {
+        return 0;
+    };
+    let scope = if entry == "a" {
+        doc.descendants().find(|n| {
+            local(n) == "nav" && n.attributes().any(|a| a.name() == "type" && a.value().split_whitespace().any(|t| t == "toc"))
+        })
+    } else {
+        Some(doc.root_element())
+    };
+    scope.map(|s| s.descendants().filter(|n| local(n) == entry).count() as u32).unwrap_or(0)
+}
+
+/// Words and non-whitespace characters of an (X)HTML document's visible text.
+/// Tolerant of broken markup: it scans the text instead of parsing XML.
+pub fn count_text(html: &str) -> (u64, u64) {
+    const SKIP: [&str; 3] = ["head", "script", "style"];
+    const INLINE: [&str; 14] = ["a", "b", "i", "em", "strong", "span", "sup", "sub", "small", "u", "s", "abbr", "cite", "q"];
+    let (mut words, mut chars) = (0u64, 0u64);
+    let mut in_word = false;
+    let mut word_has_alnum = false;
+    let mut end_word = |in_word: &mut bool, has: &mut bool| {
+        if *in_word && *has {
+            words += 1;
+        }
+        *in_word = false;
+        *has = false;
+    };
+    let mut i = 0;
+    while i < html.len() {
+        let c = html[i..].chars().next().unwrap();
+        if c == '<' {
+            let end = html[i..].find('>').map(|e| i + e + 1).unwrap_or(html.len());
+            let tag = &html[i + 1..end.saturating_sub(1)];
+            let closing = tag.starts_with('/');
+            let name: String = tag
+                .trim_start_matches('/')
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric())
+                .collect::<String>()
+                .to_ascii_lowercase();
+            if !closing && SKIP.contains(&name.as_str()) && !tag.ends_with('/') {
+                let close = format!("</{name}");
+                let lower_rest = html[end..].to_ascii_lowercase();
+                i = lower_rest.find(&close).map(|p| end + p).unwrap_or(html.len());
+                end_word(&mut in_word, &mut word_has_alnum);
+                continue;
+            }
+            if !INLINE.contains(&name.as_str()) {
+                end_word(&mut in_word, &mut word_has_alnum);
+            }
+            i = end;
+            continue;
+        }
+        let (ch, len) = if c == '&' {
+            let semi = html[i..].char_indices().take(12).find(|(_, c)| *c == ';').map(|(p, _)| p);
+            match semi {
+                Some(p) => {
+                    let entity = &html[i + 1..i + p];
+                    let ch = match entity {
+                        "nbsp" | "#160" => ' ',
+                        "amp" | "lt" | "gt" | "quot" | "apos" => '&',
+                        e if e.starts_with('#') => 'x',
+                        _ => 'x', // named letters such as &eacute;
+                    };
+                    (ch, p + 1)
+                }
+                None => ('&', 1),
+            }
+        } else {
+            (c, c.len_utf8())
+        };
+        if ch.is_whitespace() {
+            end_word(&mut in_word, &mut word_has_alnum);
+        } else {
+            chars += 1;
+            in_word = true;
+            word_has_alnum |= ch.is_alphanumeric();
+        }
+        i += len;
+    }
+    end_word(&mut in_word, &mut word_has_alnum);
+    (words, chars)
+}
+
 /// Finds the cover href in the manifest (EPUB3, EPUB2 and heuristics).
 fn find_cover_href(doc: &Document) -> Option<String> {
     let manifest = doc.descendants().find(|n| local(n) == "manifest")?;

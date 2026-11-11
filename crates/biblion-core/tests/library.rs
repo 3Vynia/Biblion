@@ -279,3 +279,57 @@ fn full_epub_metadata_is_stored() {
     assert_eq!(m.modified.as_deref(), Some("2021-06-01T00:00:00Z"));
     assert_eq!(m.format_version.as_deref(), Some("EPUB 3.0"));
 }
+
+fn write_epub_with_text(path: &Path, title: &str, chapters: &[&str]) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    let o = SimpleFileOptions::default();
+    zip.start_file("mimetype", o).unwrap();
+    zip.write_all(b"application/epub+zip").unwrap();
+    zip.start_file("META-INF/container.xml", o).unwrap();
+    zip.write_all(br#"<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>"#).unwrap();
+    let items: String = (0..chapters.len())
+        .map(|i| format!(r#"<item id="c{i}" href="text/c{i}.xhtml" media-type="application/xhtml+xml"/>"#))
+        .collect();
+    let spine: String = (0..chapters.len()).map(|i| format!(r#"<itemref idref="c{i}"/>"#)).collect();
+    let nav: String = (0..chapters.len()).map(|i| format!(r#"<li><a href="text/c{i}.xhtml">Chapter {i}</a></li>"#)).collect();
+    zip.start_file("OEBPS/content.opf", o).unwrap();
+    write!(zip, r#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>{title}</dc:title></metadata>
+      <manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>{items}
+      <item id="i1" href="img/a.jpg" media-type="image/jpeg"/><item id="i2" href="img/b.png" media-type="image/png"/></manifest>
+      <spine>{spine}</spine></package>"#).unwrap();
+    zip.start_file("OEBPS/nav.xhtml", o).unwrap();
+    write!(zip, r#"<html xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol>{nav}</ol></nav></body></html>"#).unwrap();
+    for (i, text) in chapters.iter().enumerate() {
+        zip.start_file(format!("OEBPS/text/c{i}.xhtml"), o).unwrap();
+        write!(zip, "<html><head><title>Ignored title</title><style>p {{ color: red }}</style></head><body><h1>Chapter</h1><p>{text}</p><script>var notWords = 1;</script></body></html>").unwrap();
+    }
+    zip.finish().unwrap();
+}
+
+#[test]
+fn analyze_counts_words_chapters_and_images() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    let path = books.join("counted.epub");
+    // 1 + 9 words, 1 + 5 words (the <h1> counts, <title>/<style>/<script> don't).
+    write_epub_with_text(&path, "Counted", &["One two three four five six seven eight nine", "Ten &amp; eleven, twelve"]);
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    scan(&lib, &books);
+    let id = find(&lib, "counted")[0].id;
+
+    let stats = lib.analyze(id).unwrap();
+    assert_eq!(stats.words, 1 + 9 + 1 + 3);
+    assert_eq!(stats.chapters, 2);
+    assert_eq!(stats.images, 2);
+    assert!(stats.characters > 50);
+    assert_eq!(stats.reading_minutes, 1);
+    // Cached until the file changes.
+    assert_eq!(lib.book_stats(id).unwrap(), Some(stats.clone()));
+
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    write_epub_with_text(&path, "Counted", &["Only four words here"]);
+    scan(&lib, &books);
+    assert_eq!(lib.book_stats(id).unwrap(), None, "stats of the old file must not be reused");
+    assert_eq!(lib.analyze(id).unwrap().words, 5);
+}
