@@ -114,13 +114,21 @@
     }
   }
 
+  // The book panel takes a column when there is room; otherwise it floats
+  // over the content so the grid keeps a usable width.
+  const DETAIL_WIDTH = 360
+  const MIN_CONTENT = 620
+  let windowWidth = $state(typeof window === 'undefined' ? 1400 : window.innerWidth)
+  const sidebarWidth = $derived(ui.value.sidebarCollapsed ? 68 : 232)
+  const detailFloats = $derived(windowWidth - sidebarWidth - DETAIL_WIDTH < MIN_CONTENT)
+
   const route = $derived(nav.route)
   const viewKey = $derived(search ? `search:${search}` : routeKey(route))
 </script>
 
-<svelte:window onkeydown={onGlobalKey} />
+<svelte:window onkeydown={onGlobalKey} bind:innerWidth={windowWidth} />
 
-<div class="app" class:with-detail={selectedId !== null}>
+<div class="app" class:with-detail={selectedId !== null && !detailFloats}>
   <Sidebar />
 
   <div class="main">
@@ -193,10 +201,17 @@
     </main>
   </div>
 
-  {#if selectedId !== null}
+  {#if selectedId !== null && !detailFloats}
     <BookDetail id={selectedId} onread={(b) => (reading = b)} onclose={() => (selectedId = null)} />
   {/if}
 </div>
+
+{#if selectedId !== null && detailFloats}
+  <div class="scrim" role="presentation" onclick={() => (selectedId = null)}></div>
+  <div class="drawer">
+    <BookDetail id={selectedId} onread={(b) => (reading = b)} onclose={() => (selectedId = null)} />
+  </div>
+{/if}
 
 {#if showScan}
   <ScanPanel {roots} onrootschange={(r) => (roots = r)} onclose={() => (showScan = false)} />
@@ -291,6 +306,30 @@
   .view {
     position: absolute;
     inset: 0;
+  }
+
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 13;
+    background: rgb(0 0 0 / 0.25);
+    animation: fade 200ms ease both;
+  }
+
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 14;
+    width: min(380px, 92vw);
+    box-shadow: -20px 0 50px rgb(0 0 0 / 0.3);
   }
 
   .fatal {
