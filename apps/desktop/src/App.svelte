@@ -1,86 +1,56 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import CoverGrid from './components/CoverGrid.svelte'
+  import Sidebar from './components/Sidebar.svelte'
   import BookDetail from './components/BookDetail.svelte'
   import ScanPanel from './components/ScanPanel.svelte'
+  import Icon from './components/Icon.svelte'
   import EpubReader from './reader/EpubReader.svelte'
+  import HomeView from './views/HomeView.svelte'
+  import BooksView from './views/BooksView.svelte'
+  import AuthorsView from './views/AuthorsView.svelte'
+  import SeriesView from './views/SeriesView.svelte'
+  import CollectionsView from './views/CollectionsView.svelte'
+  import FormatsView from './views/FormatsView.svelte'
   import { api, errorMessage } from './lib/api'
-  import { PageCache, type Fetcher } from './lib/pageCache'
-  import { READABLE, formatCount } from './lib/format'
+  import { READABLE } from './lib/format'
+  import { library } from './lib/library.svelte'
+  import { rise } from './lib/motion'
+  import { nav, routeKey } from './lib/nav.svelte'
   import { scan } from './lib/scan.svelte'
-  import type { Book, BookSummary, LibraryStats, SortBy } from './lib/types'
+  import type { Book, BookSummary } from './lib/types'
 
-  const SEARCH_DEBOUNCE_MS = 150
-  const REFRESH_DURING_SCAN_MS = 2000
+  const SEARCH_DEBOUNCE_MS = 180
+  const REFRESH_DURING_SCAN_MS = 2500
 
   let roots = $state<string[]>([])
-  let stats = $state<LibraryStats | null>(null)
+  let searchInput = $state('')
   let search = $state('')
-  let sort = $state<SortBy>('title')
   let selectedId = $state<number | null>(null)
   let reading = $state<Book | null>(null)
   let showScan = $state(false)
   let startupError = $state<string | null>(null)
-  let version = $state(0)
-  let grid = $state<CoverGrid>()
 
-  function makeFetcher(text: string, sortBy: SortBy): Fetcher<BookSummary> {
-    const query = text.trim()
-    return (offset, limit) =>
-      api.listBooks({
-        text: query || null,
-        sort: query && sortBy === 'title' ? 'relevance' : sortBy,
-        offset,
-        limit,
-      })
-  }
-
-  const cache = new PageCache<BookSummary>(makeFetcher('', 'title'), () => version++)
-  // The cache is plain TypeScript; `version` makes its fields reactive.
-  const total = $derived.by(() => (void version, cache.total))
-  const loadError = $derived.by(() => (void version, cache.error))
-
-  // Re-query (debounced) when the search text or the sort order changes.
-  let firstQuery = true
+  // Debounce the global search box.
   $effect(() => {
-    const fetcher = makeFetcher(search, sort)
-    if (firstQuery) {
-      firstQuery = false
-      return
-    }
-    const t = setTimeout(() => {
-      cache.reset(fetcher)
-      grid?.scrollToTop()
-    }, SEARCH_DEBOUNCE_MS)
+    const value = searchInput
+    const t = setTimeout(() => (search = value.trim()), SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(t)
   })
 
-  async function refreshStats() {
-    try {
-      stats = await api.stats()
-    } catch (e) {
-      console.error('stats failed', e)
-    }
-  }
-
-  // Show new books while a scan is running, without hammering the database.
+  // Show new books while a scan runs, without hammering the database.
   let lastRefresh = 0
   scan.onProgress = () => {
     const now = Date.now()
     if (now - lastRefresh < REFRESH_DURING_SCAN_MS) return
     lastRefresh = now
-    cache.refresh()
-    refreshStats()
+    library.changed()
   }
-  scan.onFinished = () => {
-    cache.refresh()
-    refreshStats()
-  }
+  scan.onFinished = () => library.changed()
 
   onMount(async () => {
     try {
       roots = await api.getRoots()
-      await refreshStats()
+      await library.refresh()
       if (roots.length === 0) showScan = true
       else if (!(await api.isScanning())) scan.start() // cheap incremental rescan
     } catch (e) {
@@ -102,90 +72,96 @@
 
   function closeReader() {
     reading = null
-    // Pick up the saved progress in the grid.
-    cache.refresh()
+    library.changed() // progress changed
   }
 
   function onGlobalKey(e: KeyboardEvent) {
     if (reading || showScan) return
+    const inField = (e.target as HTMLElement | null)?.closest?.('input, select, textarea')
     if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
       e.preventDefault()
       document.getElementById('search')?.focus()
     } else if (e.key === 'Escape') {
-      if (search) search = ''
-      else selectedId = null
+      if (searchInput) searchInput = ''
+      else if (selectedId !== null) selectedId = null
+      else if (!inField && nav.canGoBack) nav.back()
+    } else if (e.altKey && e.key === 'ArrowLeft' && nav.canGoBack) {
+      nav.back()
     }
   }
+
+  const route = $derived(nav.route)
+  const viewKey = $derived(search ? `search:${search}` : routeKey(route))
 </script>
 
 <svelte:window onkeydown={onGlobalKey} />
 
 <div class="app" class:with-detail={selectedId !== null}>
-  <header class="toolbar">
-    <h1>Biblion</h1>
-    <input
-      id="search"
-      type="search"
-      placeholder="Search titles, authors, series, tags…"
-      autocomplete="off"
-      spellcheck="false"
-      bind:value={search}
-    />
-    <label class="sort">
-      <span class="muted">Sort</span>
-      <select bind:value={sort}>
-        <option value="title">{search.trim() ? 'Relevance' : 'Title'}</option>
-        <option value="author">Author</option>
-        <option value="series">Series</option>
-        <option value="added_desc">Recently added</option>
-        <option value="recently_read">Recently read</option>
-      </select>
-    </label>
-    <span class="count muted">
-      {#if total !== null}
-        {formatCount(total)}{search.trim() ? (total === 1 ? ' result' : ' results') : total === 1 ? ' book' : ' books'}
-      {/if}
-    </span>
-    <button class="scan-button" onclick={() => (showScan = true)}>
-      {#if scan.running}
-        <span class="spinner" aria-hidden="true"></span>
-        {scan.phase === 'processing' ? `Scanning ${Math.floor((scan.fraction ?? 0) * 100)}%` : 'Scanning…'}
-      {:else}
-        Folders
-      {/if}
-    </button>
-  </header>
+  <Sidebar onfolders={() => (showScan = true)} />
 
-  <main>
-    {#if startupError}
-      <div class="empty">
-        <p class="error">Biblion could not start: {startupError}</p>
-      </div>
-    {:else if total === 0 && !search.trim()}
-      <div class="empty">
-        {#if scan.running}
-          <p>Looking for books…</p>
+  <div class="main">
+    <header class="topbar">
+      <div class="search" class:active={!!searchInput}>
+        <Icon name="search" size={17} />
+        <input
+          id="search"
+          type="search"
+          placeholder="Search titles, authors, series, tags…"
+          autocomplete="off"
+          spellcheck="false"
+          bind:value={searchInput}
+        />
+        {#if searchInput}
+          <button class="ghost clear" onclick={() => (searchInput = '')} aria-label="Clear search"
+            ><Icon name="close" size={14} /></button
+          >
         {:else}
-          <h2>Your library is empty</h2>
-          <p class="muted">Add a folder with EPUB, PDF, MOBI, AZW3 or CBZ/CBR files.</p>
-          <button class="primary" onclick={() => (showScan = true)}>Add a folder</button>
+          <kbd>Ctrl F</kbd>
         {/if}
       </div>
-    {:else if total === 0}
-      <div class="empty"><p class="muted">No books match “{search.trim()}”.</p></div>
-    {:else if loadError && total === null}
-      <div class="empty"><p class="error">Could not load the library: {errorMessage(loadError)}</p></div>
-    {:else}
-      <CoverGrid
-        bind:this={grid}
-        {cache}
-        {version}
-        {selectedId}
-        onselect={(b) => (selectedId = b.id)}
-        onopen={openBook}
-      />
-    {/if}
-  </main>
+    </header>
+
+    <main>
+      {#if startupError}
+        <div class="fatal"><p class="error">Biblion could not start: {startupError}</p></div>
+      {:else}
+        {#key viewKey}
+          <div class="view" in:rise={{ y: 8, duration: 280 }}>
+            {#if search}
+              <BooksView
+                title="Search"
+                filter={{}}
+                text={search}
+                {selectedId}
+                onselect={(b) => (selectedId = b.id)}
+                onopen={openBook}
+              />
+            {:else if route.name === 'home'}
+              <HomeView onselect={(b) => (selectedId = b.id)} onopen={openBook} onfolders={() => (showScan = true)} />
+            {:else if route.name === 'books'}
+              <BooksView
+                title={route.title}
+                subtitle={route.subtitle}
+                filter={route.filter}
+                sort={route.sort}
+                {selectedId}
+                onselect={(b) => (selectedId = b.id)}
+                onopen={openBook}
+              />
+            {:else if route.name === 'authors'}
+              <AuthorsView />
+            {:else if route.name === 'series'}
+              <SeriesView />
+            {:else if route.name === 'collections'}
+              <CollectionsView />
+            {:else if route.name === 'formats'}
+              <FormatsView />
+            {/if}
+          </div>
+        {/key}
+      {/if}
+    </main>
+  </div>
 
   {#if selectedId !== null}
     <BookDetail id={selectedId} onread={(b) => (reading = b)} onclose={() => (selectedId = null)} />
@@ -200,102 +176,94 @@
   <EpubReader book={reading} onclose={closeReader} />
 {/if}
 
-{#if stats && stats.books > 0}
-  <span class="sr-only" aria-live="polite">{formatCount(stats.books)} books in the library</span>
-{/if}
-
 <style>
   .app {
     display: grid;
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-columns: auto 1fr;
     height: 100%;
   }
 
   .app.with-detail {
-    grid-template-columns: 1fr 360px;
+    grid-template-columns: auto 1fr 360px;
   }
 
-  .toolbar {
-    grid-column: 1 / -1;
+  .main {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 20px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
-
-  h1 {
-    font-family: var(--serif);
-    font-size: 20px;
-    margin: 0 8px 0 0;
-    color: var(--accent);
-  }
-
-  #search {
-    flex: 1;
-    max-width: 520px;
-  }
-
-  .sort {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .count {
-    flex: 1;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .scan-button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .spinner {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  main {
+    flex-direction: column;
     min-width: 0;
     min-height: 0;
   }
 
-  .empty {
-    height: 100%;
+  .topbar {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    text-align: center;
+    padding: 12px 28px 0;
+  }
+
+  .search {
+    display: flex;
+    align-items: center;
     gap: 8px;
+    width: min(560px, 100%);
+    padding: 0 8px 0 14px;
+    border-radius: 22px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    transition:
+      border-color 160ms ease,
+      box-shadow 220ms var(--ease);
   }
 
-  .empty h2 {
-    font-family: var(--serif);
-    margin: 0;
+  .search:focus-within,
+  .search.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px var(--accent-soft);
+    color: var(--accent);
   }
 
-  .sr-only {
+  .search input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    padding: 9px 0;
+    outline: none;
+    color: var(--text);
+  }
+
+  .search input::-webkit-search-cancel-button {
+    display: none;
+  }
+
+  .clear {
+    padding: 4px;
+    border-radius: 50%;
+  }
+
+  kbd {
+    font-family: inherit;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+
+  main {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .view {
     position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
+    inset: 0;
+  }
+
+  .fatal {
+    height: 100%;
+    display: grid;
+    place-items: center;
   }
 </style>
