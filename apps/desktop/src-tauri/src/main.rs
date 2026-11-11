@@ -40,6 +40,7 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("thumb", file_scheme(protocols::thumbnail))
         .register_asynchronous_uri_scheme_protocol("book", file_scheme(protocols::book_file))
         .setup(|app| {
