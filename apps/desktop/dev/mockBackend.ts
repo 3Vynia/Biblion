@@ -1,6 +1,6 @@
 // In-memory imitation of the Tauri commands in src-tauri/src/commands.rs.
 // Filters and sort orders follow crates/biblion-core/src/db.rs.
-import type { Book, BookQuery, BookSummary, Format, Shelf } from '../src/lib/types'
+import type { Annotation, AnnotationQuery, Book, BookQuery, BookSummary, Format, NewAnnotation, Shelf } from '../src/lib/types'
 
 const FORMATS: Format[] = ['epub', 'epub', 'epub', 'pdf', 'mobi', 'azw3', 'cbz', 'cbr']
 const WORDS = ['Abyss', 'Garden', 'Storm', 'River', 'Night', 'Island', 'Wolf', 'Silence', 'Border', 'Mirror', 'Labyrinth', 'Salt']
@@ -115,6 +115,10 @@ function book(id: number): Book {
     progress: r.progress === null ? null : { locator: '', percent: r.progress, updated_at: r.read_at ?? NOW, finished: r.finished },
   }
 }
+
+const annotations: Annotation[] = []
+let nextAnnotation = 1
+let clock = NOW
 
 let readerSettings: unknown = null
 let uiSettings: unknown = null
@@ -231,6 +235,45 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       return null
     case 'set_progress':
       return null
+    case 'add_annotation': {
+      const a = args.annotation as NewAnnotation
+      const note = a.note?.trim() || null
+      annotations.push({ ...a, note, id: nextAnnotation, created_at: ++clock, updated_at: clock })
+      return nextAnnotation++
+    }
+    case 'update_annotation': {
+      const a = annotations.find((x) => x.id === args.id)
+      if (!a) throw { code: 'not_found', message: 'not found' }
+      if (args.note !== null && args.note !== undefined) a.note = (args.note as string).trim() || null
+      if (args.color) a.color = args.color as string
+      a.updated_at = ++clock
+      return null
+    }
+    case 'delete_annotation': {
+      const i = annotations.findIndex((x) => x.id === args.id)
+      if (i < 0) throw { code: 'not_found', message: 'not found' }
+      annotations.splice(i, 1)
+      return null
+    }
+    case 'book_annotations':
+      return annotations.filter((a) => a.book_id === args.id).sort((a, b) => a.percent - b.percent || a.id - b.id)
+    case 'list_annotations': {
+      const q = args.query as AnnotationQuery
+      const text = q.text?.trim().toLowerCase()
+      const list = annotations
+        .filter((a) => (q.book_id ? a.book_id === q.book_id : true))
+        .filter((a) => (q.kind ? a.kind === q.kind : true))
+        .filter((a) => (q.color ? a.color === q.color : true))
+        .filter((a) => (text ? `${a.text} ${a.note ?? ''}`.toLowerCase().includes(text) : true))
+        .sort((a, b) => b.created_at - a.created_at)
+      const items = list.slice(q.offset, q.offset + q.limit).map((a) => {
+        const r = rows[a.book_id - 1]
+        return { annotation: a, book_title: r.title, book_authors: r.authors, cover_key: null, format: r.format }
+      })
+      return { items, total: list.length, offset: q.offset }
+    }
+    case 'annotation_counts':
+      return [annotations.filter((a) => a.kind === 'highlight').length, annotations.filter((a) => a.kind === 'bookmark').length]
     case 'analyze_book':
       return { words: 98_765, characters: 512_000, chapters: 31, images: 4, reading_minutes: 396 }
     case 'data_dir':
