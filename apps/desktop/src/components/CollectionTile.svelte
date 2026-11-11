@@ -14,9 +14,12 @@
     query: Partial<BookQuery>
     tint?: string
     onclick: () => void
+    /** Only for collections the user made. */
+    onrename?: () => void
+    ondelete?: () => void
   }
 
-  let { name, count, icon, query, tint = 'var(--accent)', onclick }: Props = $props()
+  let { name, count, icon, query, tint = 'var(--accent)', onclick, onrename, ondelete }: Props = $props()
   let covers = $state<BookSummary[]>([])
 
   $effect(() => {
@@ -29,25 +32,85 @@
   })
 </script>
 
-<button class="tile" style:--tint={tint} {onclick}>
-  <div class="fan" aria-hidden="true">
-    {#each covers as book, i (book.id)}
-      <div class="sheet" style:--i={i - (covers.length - 1) / 2}>
-        <BookCover title={book.title} author={book.authors[0]} coverKey={book.cover_key} />
-      </div>
-    {:else}
-      <div class="sheet empty"><Icon name={icon} size={26} strokeWidth={1.5} /></div>
-    {/each}
-  </div>
-  <div class="meta">
-    <span class="icon"><Icon name={icon} size={15} /></span>
-    <span class="name">{name}</span>
-    <span class="count">{formatCount(count)}</span>
-  </div>
-</button>
+<div class="holder">
+  <button class="tile" style:--tint={tint} {onclick}>
+    <div class="fan" aria-hidden="true">
+      {#each covers as book, i (book.id)}
+        <div class="sheet" style:--i={i - (covers.length - 1) / 2}>
+          <BookCover title={book.title} author={book.authors[0]} coverKey={book.cover_key} />
+        </div>
+      {:else}
+        <div class="sheet empty"><Icon name={icon} size={26} strokeWidth={1.5} /></div>
+      {/each}
+    </div>
+    <div class="meta">
+      <span class="icon"><Icon name={icon} size={15} /></span>
+      <span class="name">{name}</span>
+      <span class="count">{formatCount(count)}</span>
+    </div>
+  </button>
+  {#if onrename || ondelete}
+    <div class="actions">
+      {#if onrename}
+        <button class="action" onclick={onrename} title="Rename {name}" aria-label="Rename {name}"><Icon name="edit" size={14} /></button>
+      {/if}
+      {#if ondelete}
+        <button class="action danger" onclick={ondelete} title="Delete {name}" aria-label="Delete {name}"
+          ><Icon name="trash" size={14} /></button
+        >
+      {/if}
+    </div>
+  {/if}
+</div>
 
 <style>
+  .holder {
+    position: relative;
+  }
+
+  .actions {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 3;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity 180ms ease,
+      transform 220ms var(--ease);
+  }
+
+  .holder:hover .actions,
+  .actions:focus-within {
+    opacity: 1;
+    transform: none;
+  }
+
+  .action {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 9px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    color: var(--muted);
+  }
+
+  .action:hover:not(:disabled) {
+    color: var(--accent);
+  }
+
+  .action.danger:hover:not(:disabled) {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  }
+
   .tile {
+    width: 100%;
     display: flex;
     flex-direction: column;
     gap: 14px;
