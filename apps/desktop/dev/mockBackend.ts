@@ -81,8 +81,18 @@ function book(id: number): Book {
       isbn: null,
       published: '2019-04-12',
       description: 'A mock book used to test the interface.',
-      tags: ['Fiction'],
+      tags: ['Fiction', 'Adventure'],
       page_count: null,
+      subtitle: id % 2 ? 'A Novel' : null,
+      contributors: [{ name: 'Tess Translator', role: 'trl' }],
+      identifiers: [
+        { scheme: 'isbn', value: '978-84-01-35230-9' },
+        { scheme: 'uuid', value: '7c9e6679-7425-40de-944b-e07fc1f90ae7' },
+      ],
+      rights: 'All rights reserved',
+      source: null,
+      modified: '2020-01-15T10:00:00Z',
+      format_version: 'EPUB 3.0',
     },
     has_cover: false,
     cover_key: null,
@@ -176,6 +186,10 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       return null
     case 'set_progress':
       return null
+    case 'analyze_book':
+      return { words: 98_765, characters: 512_000, chapters: 31, images: 4, reading_minutes: 396 }
+    case 'data_dir':
+      return '/home/reader/.local/share/io.github.3vynia.biblion'
     default:
       console.warn('mock: unhandled command', cmd, args)
       return null
