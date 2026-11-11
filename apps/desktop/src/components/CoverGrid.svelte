@@ -15,9 +15,13 @@
     selectedId: number | null
     onselect: (book: BookSummary) => void
     onopen: (book: BookSummary) => void
+    /** Selection mode: clicks tick books instead of opening them. */
+    selecting?: boolean
+    picked?: ReadonlySet<number>
+    ontoggle?: (book: BookSummary) => void
   }
 
-  let { cache, version, selectedId, onselect, onopen }: Props = $props()
+  let { cache, version, selectedId, onselect, onopen, selecting = false, picked, ontoggle }: Props = $props()
 
   const PADDING = 24
 
@@ -85,14 +89,23 @@
       >
         {#if cell.book}
           {@const book = cell.book}
+          {@const isPicked = selecting && !!picked?.has(book.id)}
           <button
             class="card"
-            class:selected={book.id === selectedId}
-            onclick={() => onselect(book)}
-            ondblclick={() => onopen(book)}
-            onkeydown={(e) => e.key === 'Enter' && e.shiftKey && onopen(book)}
+            class:selected={!selecting && book.id === selectedId}
+            class:selecting
+            class:picked={isPicked}
+            aria-pressed={selecting ? isPicked : undefined}
+            onclick={() => (selecting ? ontoggle?.(book) : onselect(book))}
+            ondblclick={() => !selecting && onopen(book)}
+            onkeydown={(e) => !selecting && e.key === 'Enter' && e.shiftKey && onopen(book)}
             title={book.title}
           >
+            {#if selecting}
+              <span class="tick" aria-hidden="true">
+                {#if isPicked}<svg viewBox="0 0 24 24" width="14" height="14"><path d="M5 12.5 10 17 19 7" /></svg>{/if}
+              </span>
+            {/if}
             <div class="cover" style:height="{metrics.coverHeight}px">
               <BookCover title={book.title} author={book.authors[0]} coverKey={book.cover_key} />
               {#if book.favorite}<span class="fav" aria-label="Favourite">♥</span>{/if}
@@ -179,6 +192,70 @@
   .card.selected .cover {
     outline: 3px solid var(--accent);
     outline-offset: 3px;
+  }
+
+  /* Selection mode. */
+  .tick {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: rgb(0 0 0 / 0.35);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 0.4);
+    transition:
+      background 160ms ease,
+      transform 220ms var(--ease);
+  }
+
+  .tick svg {
+    fill: none;
+    stroke: var(--accent-text);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .card.picked .tick {
+    background: var(--accent);
+    border-color: var(--accent);
+    animation: pop 320ms var(--ease);
+  }
+
+  @keyframes pop {
+    40% {
+      transform: scale(1.25);
+    }
+  }
+
+  .card.selecting .cover {
+    transition:
+      transform 220ms var(--ease),
+      box-shadow 260ms var(--ease),
+      opacity 200ms ease;
+  }
+
+  .card.selecting:hover .cover {
+    transform: none;
+  }
+
+  .card.picked .cover {
+    transform: scale(0.94);
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+  }
+
+  .card.picked:hover .cover {
+    transform: scale(0.94);
+  }
+
+  .card {
+    position: relative;
   }
 
   .fav {
