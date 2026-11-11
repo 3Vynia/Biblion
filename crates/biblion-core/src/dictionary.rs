@@ -394,10 +394,10 @@ fn safe_name(name: &str) -> Option<String> {
 pub fn install(dir: &Path, source: &Path) -> Result<PathBuf> {
     let file_name = source.file_name().and_then(|n| n.to_str()).ok_or_else(|| bad("invalid file name"))?;
     let lower = file_name.to_ascii_lowercase();
-    let stem = ["tar.gz", "tgz", "tar", "zip", "ifo"]
+    let stem = ["tar.gz", "tgz", "tar.xz", "txz", "tar", "zip", "ifo"]
         .iter()
         .find_map(|ext| lower.strip_suffix(&format!(".{ext}")).map(|s| file_name[..s.len()].to_owned()))
-        .ok_or_else(|| bad("choose a StarDict .ifo file, or a .zip / .tar.gz with one"))?;
+        .ok_or_else(|| bad("choose a StarDict .ifo file, or a .zip / .tar.gz / .tar.xz with one"))?;
     let mut target = dir.join(&stem);
     let mut n = 2;
     while target.exists() {
@@ -438,7 +438,17 @@ pub fn install(dir: &Path, source: &Path) -> Result<PathBuf> {
             }
         } else {
             let f = File::open(source).map_err(|e| Error::io(source, e))?;
-            let reader: Box<dyn Read> = if lower.ends_with(".tar") { Box::new(f) } else { Box::new(flate2::read::GzDecoder::new(f)) };
+            let reader: Box<dyn Read> = if lower.ends_with(".tar") {
+                Box::new(f)
+            } else if lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
+                // FreeDict ships StarDict files as .tar.xz.
+                let mut input = std::io::BufReader::new(f.take(MAX_INSTALL_BYTES));
+                let mut tarball = Vec::new();
+                lzma_rs::xz_decompress(&mut input, &mut tarball).map_err(bad)?;
+                Box::new(std::io::Cursor::new(tarball))
+            } else {
+                Box::new(flate2::read::GzDecoder::new(f))
+            };
             let mut archive = tar::Archive::new(reader);
             for entry in archive.entries().map_err(bad)? {
                 let mut entry = entry.map_err(bad)?;
@@ -602,8 +612,20 @@ mod tests {
         builder.into_inner().unwrap().finish().unwrap();
         install(&dicts, &tgz).unwrap();
 
+        // From a .tar.xz (how FreeDict ships them).
+        let mut plain_tar = tar::Builder::new(Vec::new());
+        for f in ["es-en.ifo", "es-en.idx", "es-en.dict.dz"] {
+            plain_tar.append_path_with_name(src.join(f), format!("freedict/{f}")).unwrap();
+        }
+        let tar_bytes = plain_tar.into_inner().unwrap();
+        let mut xz = Vec::new();
+        lzma_rs::xz_compress(&mut std::io::Cursor::new(tar_bytes), &mut xz).unwrap();
+        let txz = tmp.path().join("spa-eng.tar.xz");
+        fs::write(&txz, xz).unwrap();
+        install(&dicts, &txz).unwrap();
+
         let all = open_all(&dicts);
-        assert_eq!(all.len(), 3);
+        assert_eq!(all.len(), 4);
         assert!(all.iter().all(|d| d.lookup("house").len() == 1));
 
         // An archive without a dictionary leaves nothing behind.
@@ -617,7 +639,7 @@ mod tests {
         // Removing deletes the files and the emptied folder; ids can't escape.
         let id = all[0].info.id.clone();
         remove(&dicts, &id).unwrap();
-        assert_eq!(open_all(&dicts).len(), 2);
+        assert_eq!(open_all(&dicts).len(), 3);
         assert!(remove(&dicts, "../src/es-en.ifo").is_err());
         assert!(src.join("es-en.ifo").exists());
     }
