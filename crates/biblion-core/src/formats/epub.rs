@@ -9,7 +9,7 @@ use zip::ZipArchive;
 
 use super::util::{zip_names, is_image_name, looks_like_image, read_limited, resolve_zip_path};
 use super::{Extracted, MAX_COVER_BYTES, MAX_META_BYTES};
-use crate::{Error, Metadata, Result};
+use crate::{Contributor, Error, Identifier, Metadata, Result};
 
 type Zip = ZipArchive<BufReader<File>>;
 
@@ -80,8 +80,16 @@ pub fn extract(path: &Path) -> Result<Extracted> {
     Ok(Extracted { metadata, cover })
 }
 
+fn attr<'a>(n: &Node<'a, '_>, name: &str) -> Option<&'a str> {
+    // Namespaced EPUB 2 attributes (opf:role, opf:scheme, opf:event) match by local name.
+    n.attributes().find(|a| a.name() == name).map(|a| a.value())
+}
+
 fn parse_opf_metadata(doc: &Document) -> Metadata {
     let mut m = Metadata::default();
+    if let Some(v) = doc.root_element().attribute("version") {
+        m.format_version = Some(format!("EPUB {}", v.trim()));
+    }
     let Some(meta) = doc.descendants().find(|n| local(n) == "metadata") else {
         return m;
     };
@@ -97,64 +105,137 @@ fn parse_opf_metadata(doc: &Document) -> Metadata {
             .and_then(|n| text(&n))
     };
 
+    let mut titles: Vec<(Option<String>, String)> = Vec::new();
     let mut creators: Vec<(i32, String)> = Vec::new();
+    let mut modified_epub3: Option<String> = None;
     for n in meta.children().filter(|n| n.is_element()) {
+        let id = n.attribute("id");
         match local(&n) {
-            "title" if m.title.is_none() => m.title = text(&n),
-            "creator" => {
-                let id = n.attribute("id");
-                // Authors only (or no role given), not illustrators/editors.
-                let role = n
-                    .attributes()
-                    .find(|a| a.name() == "role")
-                    .map(|a| a.value().to_owned())
-                    .or_else(|| refines(id, "role"));
-                if role.as_deref().is_none_or(|r| r == "aut") {
-                    if let Some(t) = text(&n) {
-                        let order = refines(id, "display-seq").and_then(|s| s.parse().ok()).unwrap_or(1000);
-                        creators.push((order, t));
-                    }
+            "title" => {
+                if let Some(t) = text(&n) {
+                    titles.push((refines(id, "title-type"), t));
+                }
+            }
+            tag @ ("creator" | "contributor") => {
+                let Some(name) = text(&n) else { continue };
+                let role = attr(&n, "role")
+                    .map(str::to_owned)
+                    .or_else(|| refines(id, "role"))
+                    .map(|r| r.trim().to_ascii_lowercase())
+                    .unwrap_or_else(|| if tag == "creator" { "aut" } else { "ctb" }.to_owned());
+                if role == "aut" {
+                    let order = refines(id, "display-seq").and_then(|s| s.parse().ok()).unwrap_or(1000);
+                    creators.push((order, name));
+                } else if !m.contributors.iter().any(|c| c.name == name && c.role == role) {
+                    m.contributors.push(Contributor { name, role });
                 }
             }
             "publisher" => m.publisher = m.publisher.take().or_else(|| text(&n)),
             "language" => m.language = m.language.take().or_else(|| text(&n)),
-            "date" => m.published = m.published.take().or_else(|| text(&n)),
             "description" => m.description = m.description.take().or_else(|| text(&n)),
+            "rights" => m.rights = m.rights.take().or_else(|| text(&n)),
+            "source" => m.source = m.source.take().or_else(|| text(&n)),
             "subject" => m.tags.extend(text(&n)),
+            "date" => match attr(&n, "event").map(str::to_ascii_lowercase).as_deref() {
+                Some("modification") => m.modified = m.modified.take().or_else(|| text(&n)),
+                Some("creation") | Some("original-publication") | Some("publication") | None => {
+                    m.published = m.published.take().or_else(|| text(&n))
+                }
+                Some(_) => {}
+            },
             "identifier" => {
-                if m.isbn.is_none() {
-                    let scheme = n.attributes().find(|a| a.name() == "scheme").map(|a| a.value().to_ascii_lowercase());
-                    if let Some(t) = text(&n) {
-                        let lower = t.to_ascii_lowercase();
-                        if scheme.as_deref() == Some("isbn") || lower.starts_with("urn:isbn:") || lower.starts_with("isbn") {
-                            m.isbn = Some(lower.trim_start_matches("urn:isbn:").trim_start_matches("isbn:").to_owned());
-                        }
+                if let Some(ident) = parse_identifier(&n, refines(id, "identifier-type")) {
+                    if !m.identifiers.contains(&ident) {
+                        m.identifiers.push(ident);
                     }
                 }
             }
             "meta" => {
-                let name = n.attribute("name");
-                let content = n.attribute("content");
-                match (name, content) {
+                match (n.attribute("name"), n.attribute("content")) {
                     (Some("calibre:series"), Some(c)) => m.series = Some(c.to_owned()),
                     (Some("calibre:series_index"), Some(c)) => m.series_index = c.trim().parse().ok(),
                     _ => {}
                 }
-                if n.attribute("property") == Some("belongs-to-collection") && m.series.is_none() {
-                    let id = n.attribute("id");
-                    let ctype = refines(id, "collection-type");
-                    if ctype.as_deref().is_none_or(|t| t == "series") {
-                        m.series = text(&n);
-                        m.series_index = refines(id, "group-position").and_then(|s| s.trim().parse().ok());
+                match n.attribute("property") {
+                    Some("dcterms:modified") => modified_epub3 = text(&n),
+                    Some("belongs-to-collection") if m.series.is_none() => {
+                        let ctype = refines(id, "collection-type");
+                        if ctype.as_deref().is_none_or(|t| t == "series") {
+                            m.series = text(&n);
+                            m.series_index = refines(id, "group-position").and_then(|s| s.trim().parse().ok());
+                        }
                     }
+                    _ => {}
                 }
             }
             _ => {}
         }
     }
+
+    // Main title: the one marked "main", else the first. Subtitle only when marked.
+    let main = titles.iter().position(|(t, _)| t.as_deref() == Some("main")).unwrap_or(0);
+    m.title = titles.get(main).map(|(_, t)| t.clone());
+    m.subtitle = titles
+        .iter()
+        .enumerate()
+        .find(|(i, (t, _))| *i != main && t.as_deref() == Some("subtitle"))
+        .map(|(_, (_, t))| t.clone());
+    m.modified = modified_epub3.or(m.modified);
+    m.isbn = m.identifiers.iter().find(|i| i.scheme == "isbn").map(|i| i.value.clone());
     creators.sort_by_key(|(o, _)| *o);
     m.authors = creators.into_iter().map(|(_, a)| a).collect();
     m
+}
+
+/// Works out the scheme of a `<dc:identifier>` from its attributes, EPUB3
+/// refinements (ONIX code list 5) and well-known prefixes.
+fn parse_identifier(n: &Node, refined_type: Option<String>) -> Option<Identifier> {
+    let raw = text(n)?;
+    let lower = raw.to_ascii_lowercase();
+    let declared = attr(n, "scheme").map(str::to_ascii_lowercase);
+    let onix = refined_type.as_deref().map(|t| match t.trim() {
+        "02" | "15" => "isbn",
+        "06" => "doi",
+        _ => "other",
+    });
+
+    const PREFIXES: [(&str, &str); 10] = [
+        ("urn:isbn:", "isbn"),
+        ("isbn:", "isbn"),
+        ("urn:uuid:", "uuid"),
+        ("uuid:", "uuid"),
+        ("urn:doi:", "doi"),
+        ("doi:", "doi"),
+        ("urn:asin:", "asin"),
+        ("asin:", "asin"),
+        ("calibre:", "calibre"),
+        ("google:", "google"),
+    ];
+    let (prefix_scheme, value) = PREFIXES
+        .iter()
+        .find(|(p, _)| lower.starts_with(p))
+        .map(|(p, sch)| (Some(*sch), raw[p.len()..].trim().to_owned()))
+        .unwrap_or((None, raw.clone()));
+
+    let digits: String = value.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    let looks_isbn = (digits.len() == 10 || digits.len() == 13)
+        && digits[..digits.len() - 1].chars().all(|c| c.is_ascii_digit())
+        && (digits.starts_with("978") || digits.starts_with("979") || digits.len() == 10)
+        && value.chars().all(|c| c.is_ascii_digit() || c == '-' || c == ' ' || c == 'X' || c == 'x');
+    let looks_uuid = value.len() == 36 && value.chars().filter(|&c| c == '-').count() == 4;
+
+    let scheme = match (prefix_scheme, declared.as_deref(), onix) {
+        (Some(s), _, _) => s.to_owned(),
+        (_, Some("isbn"), _) | (_, _, Some("isbn")) => "isbn".to_owned(),
+        (_, Some("amazon" | "asin" | "mobi-asin"), _) => "asin".to_owned(),
+        (_, Some("doi"), _) | (_, _, Some("doi")) => "doi".to_owned(),
+        (_, Some("uuid"), _) => "uuid".to_owned(),
+        _ if looks_isbn => "isbn".to_owned(),
+        _ if looks_uuid => "uuid".to_owned(),
+        (_, Some(other), _) => other.to_owned(),
+        _ => "other".to_owned(),
+    };
+    Some(Identifier { scheme, value })
 }
 
 /// Finds the cover href in the manifest (EPUB3, EPUB2 and heuristics).
@@ -255,5 +336,83 @@ mod tests {
         assert_eq!(m.series_index, Some(1.0));
         assert_eq!(m.isbn.as_deref(), Some("978-84-9759-920-9"));
         assert_eq!(find_cover_href(&doc).as_deref(), Some("images/portada.jpg"));
+    }
+
+    #[test]
+    fn reads_every_useful_field() {
+        let opf = r##"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+ <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+  <dc:title id="t1">The Name of the Wind</dc:title>
+  <meta refines="#t1" property="title-type">main</meta>
+  <dc:title id="t2">The Kingkiller Chronicle: Day One</dc:title>
+  <meta refines="#t2" property="title-type">subtitle</meta>
+  <dc:creator id="a1">Patrick Rothfuss</dc:creator>
+  <meta refines="#a1" property="role" scheme="marc:relators">aut</meta>
+  <dc:creator id="a2">Gabriel Dols</dc:creator>
+  <meta refines="#a2" property="role" scheme="marc:relators">trl</meta>
+  <dc:contributor opf:role="ill">Jane Illustrator</dc:contributor>
+  <dc:contributor>Someone Without Role</dc:contributor>
+  <dc:identifier id="uid">urn:uuid:7c9e6679-7425-40de-944b-e07fc1f90ae7</dc:identifier>
+  <dc:identifier opf:scheme="ISBN">978-84-01-35230-9</dc:identifier>
+  <dc:identifier opf:scheme="AMAZON">B004JHYRG0</dc:identifier>
+  <dc:identifier id="d">10.1000/xyz123</dc:identifier>
+  <meta refines="#d" property="identifier-type" scheme="onix:codelist5">06</meta>
+  <dc:date opf:event="publication">2007-03-27</dc:date>
+  <dc:date opf:event="modification">2011-05-02</dc:date>
+  <meta property="dcterms:modified">2020-01-15T10:00:00Z</meta>
+  <dc:rights>All rights reserved</dc:rights>
+  <dc:source>urn:isbn:9780756404079</dc:source>
+  <dc:publisher>Plaza &amp; Janés</dc:publisher>
+  <dc:language>es</dc:language>
+ </metadata>
+</package>"##;
+        let doc = Document::parse(opf).unwrap();
+        let m = parse_opf_metadata(&doc);
+        assert_eq!(m.title.as_deref(), Some("The Name of the Wind"));
+        assert_eq!(m.subtitle.as_deref(), Some("The Kingkiller Chronicle: Day One"));
+        assert_eq!(m.authors, vec!["Patrick Rothfuss"]);
+        let roles: Vec<(&str, &str)> = m.contributors.iter().map(|c| (c.name.as_str(), c.role.as_str())).collect();
+        assert_eq!(roles, [("Gabriel Dols", "trl"), ("Jane Illustrator", "ill"), ("Someone Without Role", "ctb")]);
+        let ids: Vec<(&str, &str)> = m.identifiers.iter().map(|i| (i.scheme.as_str(), i.value.as_str())).collect();
+        assert_eq!(
+            ids,
+            [
+                ("uuid", "7c9e6679-7425-40de-944b-e07fc1f90ae7"),
+                ("isbn", "978-84-01-35230-9"),
+                ("asin", "B004JHYRG0"),
+                ("doi", "10.1000/xyz123"),
+            ]
+        );
+        assert_eq!(m.isbn.as_deref(), Some("978-84-01-35230-9"));
+        assert_eq!(m.published.as_deref(), Some("2007-03-27"));
+        assert_eq!(m.modified.as_deref(), Some("2020-01-15T10:00:00Z"));
+        assert_eq!(m.rights.as_deref(), Some("All rights reserved"));
+        assert_eq!(m.source.as_deref(), Some("urn:isbn:9780756404079"));
+        assert_eq!(m.format_version.as_deref(), Some("EPUB 3.0"));
+    }
+
+    #[test]
+    fn epub2_dates_and_creator_roles() {
+        let opf = r##"<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
+ <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+  <dc:title>Ficciones</dc:title>
+  <dc:creator opf:role="aut" opf:file-as="Borges, Jorge Luis">Jorge Luis Borges</dc:creator>
+  <dc:creator opf:role="edt">An Editor</dc:creator>
+  <dc:date opf:event="modification">2015-01-01</dc:date>
+  <dc:date>1944</dc:date>
+  <dc:identifier>9788420633121</dc:identifier>
+ </metadata>
+</package>"##;
+        let m = parse_opf_metadata(&Document::parse(opf).unwrap());
+        assert_eq!(m.authors, vec!["Jorge Luis Borges"]);
+        assert_eq!(m.contributors.len(), 1);
+        assert_eq!((m.contributors[0].name.as_str(), m.contributors[0].role.as_str()), ("An Editor", "edt"));
+        assert_eq!(m.published.as_deref(), Some("1944"));
+        assert_eq!(m.modified.as_deref(), Some("2015-01-01"));
+        assert_eq!(m.isbn.as_deref(), Some("9788420633121"));
+        assert_eq!(m.identifiers[0].scheme, "isbn");
+        assert_eq!(m.format_version.as_deref(), Some("EPUB 2.0"));
     }
 }

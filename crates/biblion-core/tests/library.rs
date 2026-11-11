@@ -246,3 +246,36 @@ fn recently_added_follows_file_dates_on_first_import() {
     scan(&lib, &books);
     assert_eq!(recent(&lib), ["Late", "Recent", "Middle", "Old"]);
 }
+
+#[test]
+fn full_epub_metadata_is_stored() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("books/rich.epub");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(&path).unwrap());
+    let o = SimpleFileOptions::default();
+    zip.start_file("mimetype", o).unwrap();
+    zip.write_all(b"application/epub+zip").unwrap();
+    zip.start_file("META-INF/container.xml", o).unwrap();
+    zip.write_all(br#"<container><rootfiles><rootfile full-path="content.opf"/></rootfiles></container>"#).unwrap();
+    zip.start_file("content.opf", o).unwrap();
+    zip.write_all(br##"<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+      <dc:title id="t">Rayuela</dc:title><dc:title id="s">Una novela</dc:title><meta refines="#s" property="title-type">subtitle</meta>
+      <dc:creator>Julio Cortazar</dc:creator><dc:contributor opf:role="trl">Gregory Rabassa</dc:contributor>
+      <dc:identifier>urn:uuid:11111111-2222-3333-4444-555555555555</dc:identifier><dc:identifier opf:scheme="ISBN">9788437604572</dc:identifier>
+      <dc:rights>Public domain</dc:rights><meta property="dcterms:modified">2021-06-01T00:00:00Z</meta>
+    </metadata></package>"##).unwrap();
+    zip.finish().unwrap();
+
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    scan(&lib, &tmp.path().join("books"));
+    let id = find(&lib, "rayuela")[0].id;
+    let m = lib.get_book(id).unwrap().metadata;
+    assert_eq!(m.subtitle.as_deref(), Some("Una novela"));
+    assert_eq!(m.contributors, vec![biblion_core::Contributor { name: "Gregory Rabassa".into(), role: "trl".into() }]);
+    assert_eq!(m.identifiers.iter().map(|i| i.scheme.as_str()).collect::<Vec<_>>(), ["uuid", "isbn"]);
+    assert_eq!(m.isbn.as_deref(), Some("9788437604572"));
+    assert_eq!(m.rights.as_deref(), Some("Public domain"));
+    assert_eq!(m.modified.as_deref(), Some("2021-06-01T00:00:00Z"));
+    assert_eq!(m.format_version.as_deref(), Some("EPUB 3.0"));
+}

@@ -124,7 +124,36 @@ CREATE VIRTUAL TABLE books_fts USING fts5(
 );
 "#;
 
-const MIGRATIONS: &[&str] = &[SCHEMA_V1];
+/// v2: full edition metadata, and generated statistics per book.
+const SCHEMA_V2: &str = r#"
+ALTER TABLE books ADD COLUMN subtitle       TEXT;
+ALTER TABLE books ADD COLUMN contributors   TEXT;  -- JSON [{name, role}]
+ALTER TABLE books ADD COLUMN identifiers    TEXT;  -- JSON [{scheme, value}]
+ALTER TABLE books ADD COLUMN rights         TEXT;
+ALTER TABLE books ADD COLUMN source         TEXT;
+ALTER TABLE books ADD COLUMN modified       TEXT;
+ALTER TABLE books ADD COLUMN format_version TEXT;
+
+CREATE TABLE book_stats (
+    book_id     INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+    fingerprint TEXT    NOT NULL,   -- file the numbers belong to
+    words       INTEGER NOT NULL,
+    characters  INTEGER NOT NULL,
+    chapters    INTEGER NOT NULL,
+    images      INTEGER NOT NULL,
+    analyzed_at INTEGER NOT NULL
+);
+"#;
+
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2];
+
+fn to_json<T: serde::Serialize>(v: &[T]) -> Option<String> {
+    (!v.is_empty()).then(|| serde_json::to_string(v).unwrap_or_default())
+}
+
+fn from_json<T: serde::de::DeserializeOwned>(s: Option<String>) -> Vec<T> {
+    s.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default()
+}
 
 pub fn open(path: &std::path::Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
@@ -234,12 +263,15 @@ pub fn upsert_scanned(tx: &Transaction, b: &ScannedBook) -> Result<(BookId, bool
                 "UPDATE books SET path=?2, format=?3, size=?4, mtime=?5, fingerprint=?6, title=?7, sort_title=?8,
                    authors=?9, author_sort=?10, tags=?11, series=?12, series_index=?13, publisher=?14, language=?15,
                    isbn=?16, published=?17, description=?18, page_count=?19, cover_key=?20, updated_at=?21,
-                   missing=0, scan_error=?22
+                   missing=0, scan_error=?22, subtitle=?23, contributors=?24, identifiers=?25, rights=?26,
+                   source=?27, modified=?28, format_version=?29
                  WHERE id=?1",
                 params![
                     id, b.path, b.format.as_str(), b.size as i64, b.mtime, b.fingerprint, title, sort_key(&title),
                     authors_joined, author_sort, tags_joined, m.series, m.series_index, m.publisher, m.language,
-                    m.isbn, m.published, m.description, m.page_count, b.cover_key, now, b.error
+                    m.isbn, m.published, m.description, m.page_count, b.cover_key, now, b.error, m.subtitle,
+                    to_json(&m.contributors), to_json(&m.identifiers), m.rights, m.source, m.modified,
+                    m.format_version
                 ],
             )?;
             (id, false)
@@ -248,13 +280,16 @@ pub fn upsert_scanned(tx: &Transaction, b: &ScannedBook) -> Result<(BookId, bool
             tx.execute(
                 "INSERT INTO books (path, format, size, mtime, fingerprint, title, sort_title, authors, author_sort,
                    tags, series, series_index, publisher, language, isbn, published, description, page_count,
-                   cover_key, added_at, updated_at, scan_error)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",
+                   cover_key, added_at, updated_at, scan_error, subtitle, contributors, identifiers, rights,
+                   source, modified, format_version)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,
+                   ?25,?26,?27,?28,?29)",
                 params![
                     b.path, b.format.as_str(), b.size as i64, b.mtime, b.fingerprint, title, sort_key(&title),
                     authors_joined, author_sort, tags_joined, m.series, m.series_index, m.publisher, m.language,
                     m.isbn, m.published, m.description, m.page_count, b.cover_key, b.added_at.unwrap_or(now), now,
-                    b.error
+                    b.error, m.subtitle, to_json(&m.contributors), to_json(&m.identifiers), m.rights, m.source,
+                    m.modified, m.format_version
                 ],
             )?;
             (tx.last_insert_rowid(), true)
@@ -326,12 +361,14 @@ pub fn update_metadata(conn: &mut Connection, id: BookId, m: &Metadata) -> Resul
     let title = m.title.clone().unwrap_or_else(|| "Untitled".into());
     let n = tx.execute(
         "UPDATE books SET title=?2, sort_title=?3, authors=?4, author_sort=?5, tags=?6, series=?7, series_index=?8,
-           publisher=?9, language=?10, isbn=?11, published=?12, description=?13, user_edited=1, updated_at=?14
+           publisher=?9, language=?10, isbn=?11, published=?12, description=?13, user_edited=1, updated_at=?14,
+           subtitle=?15, contributors=?16, identifiers=?17, rights=?18, source=?19
          WHERE id=?1",
         params![
             id, title, sort_key(&title), m.authors.join(&SEP.to_string()),
             m.authors.first().map(|a| author_sort_key(a)).unwrap_or_default(), m.tags.join(&SEP.to_string()),
-            m.series, m.series_index, m.publisher, m.language, m.isbn, m.published, m.description, now()
+            m.series, m.series_index, m.publisher, m.language, m.isbn, m.published, m.description, now(),
+            m.subtitle, to_json(&m.contributors), to_json(&m.identifiers), m.rights, m.source
         ],
     )?;
     if n == 0 {
@@ -454,7 +491,8 @@ pub fn get_book(conn: &Connection, id: BookId) -> Result<Book> {
     conn.query_row(
         "SELECT b.id, b.path, b.format, b.size, b.fingerprint, b.title, b.authors, b.tags, b.series, b.series_index,
                 b.publisher, b.language, b.isbn, b.published, b.description, b.page_count, b.cover_key, b.added_at,
-                b.updated_at, b.missing, b.favorite, b.rating, p.locator, p.percent, p.updated_at, p.finished
+                b.updated_at, b.missing, b.favorite, b.rating, p.locator, p.percent, p.updated_at, p.finished,
+                b.subtitle, b.contributors, b.identifiers, b.rights, b.source, b.modified, b.format_version
          FROM books b LEFT JOIN progress p ON p.book_id = b.id WHERE b.id = ?1",
         [id],
         |r| {
@@ -478,6 +516,13 @@ pub fn get_book(conn: &Connection, id: BookId) -> Result<Book> {
                     published: r.get(13)?,
                     description: r.get(14)?,
                     page_count: r.get(15)?,
+                    subtitle: r.get(26)?,
+                    contributors: from_json(r.get(27)?),
+                    identifiers: from_json(r.get(28)?),
+                    rights: r.get(29)?,
+                    source: r.get(30)?,
+                    modified: r.get(31)?,
+                    format_version: r.get(32)?,
                 },
                 has_cover: cover_key.is_some(),
                 cover_key,

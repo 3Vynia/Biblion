@@ -156,6 +156,21 @@ pub fn normalize_metadata(m: &mut Metadata) {
     clean_opt(&mut m.language);
     clean_opt(&mut m.isbn);
     clean_opt(&mut m.published);
+    clean_opt(&mut m.subtitle);
+    clean_opt(&mut m.rights);
+    clean_opt(&mut m.source);
+    clean_opt(&mut m.modified);
+    if m.subtitle.is_some() && m.subtitle == m.title {
+        m.subtitle = None;
+    }
+    for c in &mut m.contributors {
+        c.name = collapse_ws(&c.name);
+    }
+    m.contributors.retain(|c| !c.name.is_empty() && !m.authors.iter().any(|a| a.eq_ignore_ascii_case(&c.name)));
+    for i in &mut m.identifiers {
+        i.value = collapse_ws(&i.value);
+    }
+    m.identifiers.retain(|i| !i.value.is_empty() && i.value.len() < 200);
     if let Some(d) = &m.description {
         let d = strip_html(d);
         m.description = if d.is_empty() { None } else { Some(d) };
