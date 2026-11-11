@@ -11,7 +11,7 @@ use crate::covers::CoverCache;
 use crate::scanner::{self, ScanEvent, ScanOptions, ScanReport};
 use crate::{
     db, formats, AuthorEntry, Book, BookId, BookStats, BookQuery, BookSummary, Error, Format, LibraryStats, Metadata, Page, Result,
-    Shelf,
+    Shelf, TagEntry,
 };
 
 const MAX_IDLE_READERS: usize = 8;
@@ -163,6 +163,23 @@ impl Library {
 
     pub fn create_shelf(&self, name: &str) -> Result<i64> {
         self.user_write(|c| db::create_shelf(c, name))
+    }
+
+    pub fn rename_shelf(&self, shelf: i64, name: &str) -> Result<()> {
+        self.user_write(|c| db::rename_shelf(c, shelf, name))
+    }
+
+    /// Deletes a collection. The books in it are not touched.
+    pub fn delete_shelf(&self, shelf: i64) -> Result<()> {
+        self.user_write(|c| db::delete_shelf(c, shelf))
+    }
+
+    pub fn list_tags(&self, prefix: Option<&str>, offset: u32, limit: u32) -> Result<Page<TagEntry>> {
+        self.read(|c| db::list_tags(c, prefix, offset, limit))
+    }
+
+    pub fn list_languages(&self) -> Result<Vec<(String, u64)>> {
+        self.read(db::list_languages)
     }
 
     pub fn add_to_shelf(&self, shelf: i64, book: BookId) -> Result<()> {

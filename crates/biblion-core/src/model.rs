@@ -189,6 +189,8 @@ pub struct BookQuery {
     pub reading_only: bool,
     /// Only books marked as finished.
     pub finished_only: bool,
+    /// Language code as stored ("es", "en-GB"…), compared ignoring case.
+    pub language: Option<String>,
     pub include_missing: bool,
     pub sort: SortBy,
     pub offset: u32,
@@ -204,6 +206,14 @@ pub struct Page<T> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthorEntry {
+    pub id: i64,
+    pub name: String,
+    pub book_count: u64,
+}
+
+/// A subject (EPUB `dc:subject`, comic genre…) and how many books have it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagEntry {
     pub id: i64,
     pub name: String,
     pub book_count: u64,
