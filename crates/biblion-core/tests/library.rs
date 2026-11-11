@@ -213,3 +213,36 @@ fn finished_filter_and_book_shelves() {
     assert_eq!(shelves, vec![to_read, other]);
     assert!(lib.book_shelves(id("alpha")).unwrap().is_empty());
 }
+
+#[test]
+fn recently_added_follows_file_dates_on_first_import() {
+    use std::time::{Duration, SystemTime};
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    let day = Duration::from_secs(86_400);
+    let ago = |days: u32| SystemTime::now() - day * days;
+    for (name, days) in [("Old", 300), ("Middle", 30), ("Recent", 2)] {
+        let path = books.join(format!("{name}.epub"));
+        write_epub(&path, name, "Some Author", 1);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(ago(days)).unwrap();
+    }
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    scan(&lib, &books);
+    let recent = |lib: &Library| -> Vec<String> {
+        lib.list_books(&BookQuery { sort: SortBy::AddedDesc, limit: 10, ..Default::default() })
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|b| b.title)
+            .collect()
+    };
+    assert_eq!(recent(&lib), ["Recent", "Middle", "Old"]);
+
+    // Later additions count from when they show up, whatever their file date.
+    std::thread::sleep(Duration::from_millis(1100));
+    let late = books.join("Late.epub");
+    write_epub(&late, "Late", "Some Author", 2);
+    std::fs::File::options().write(true).open(&late).unwrap().set_modified(ago(1000)).unwrap();
+    scan(&lib, &books);
+    assert_eq!(recent(&lib), ["Late", "Recent", "Middle", "Old"]);
+}

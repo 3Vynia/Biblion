@@ -138,7 +138,7 @@ fn process(entry: &FileEntry, covers: &CoverCache) -> (ScannedBook, bool) {
             let fallback = blake3::hash(path_str.as_bytes()).to_hex()[..32].to_owned();
             let ex = formats::fallback(&entry.path);
             return (
-                ScannedBook { path: path_str, format: entry.format, size: entry.size, mtime: entry.mtime, fingerprint: fallback, metadata: ex.metadata, cover_key: None, error: Some(e.to_string()) },
+                ScannedBook { path: path_str, format: entry.format, size: entry.size, mtime: entry.mtime, fingerprint: fallback, metadata: ex.metadata, cover_key: None, error: Some(e.to_string()), added_at: None },
                 false,
             );
         }
@@ -167,7 +167,7 @@ fn process(entry: &FileEntry, covers: &CoverCache) -> (ScannedBook, bool) {
     }
 
     (
-        ScannedBook { path: path_str, format: entry.format, size: entry.size, mtime: entry.mtime, fingerprint, metadata: extracted.metadata, cover_key, error },
+        ScannedBook { path: path_str, format: entry.format, size: entry.size, mtime: entry.mtime, fingerprint, metadata: extracted.metadata, cover_key, error, added_at: None },
         new_cover,
     )
 }
@@ -188,6 +188,7 @@ pub fn scan(
 
     // 2. Diff against the DB
     let known = db::known_files(conn)?;
+    let first_import = known.is_empty();
     let mut seen: HashSet<&str> = HashSet::with_capacity(files.len());
     let mut todo: Vec<&FileEntry> = Vec::new();
     let mut revived: Vec<i64> = Vec::new();
@@ -267,7 +268,11 @@ pub fn scan(
             tx.commit()?;
             Ok(())
         };
-        for item in rx_chan.iter() {
+        let now = db::now();
+        for mut item in rx_chan.iter() {
+            if first_import {
+                item.0.added_at = Some(item.0.mtime.clamp(0, now));
+            }
             batch.push(item);
             done += 1;
             if batch.len() >= BATCH {

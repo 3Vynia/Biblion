@@ -173,6 +173,9 @@ pub struct ScannedBook {
     pub metadata: Metadata,
     pub cover_key: Option<String>,
     pub error: Option<String>,
+    /// When the book counts as added; `None` means now. The first import of a
+    /// library uses file dates, so "recently added" is meaningful from day one.
+    pub added_at: Option<i64>,
 }
 
 /// Minimal state of a known book, for incremental scans.
@@ -246,11 +249,12 @@ pub fn upsert_scanned(tx: &Transaction, b: &ScannedBook) -> Result<(BookId, bool
                 "INSERT INTO books (path, format, size, mtime, fingerprint, title, sort_title, authors, author_sort,
                    tags, series, series_index, publisher, language, isbn, published, description, page_count,
                    cover_key, added_at, updated_at, scan_error)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?20,?21)",
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",
                 params![
                     b.path, b.format.as_str(), b.size as i64, b.mtime, b.fingerprint, title, sort_key(&title),
                     authors_joined, author_sort, tags_joined, m.series, m.series_index, m.publisher, m.language,
-                    m.isbn, m.published, m.description, m.page_count, b.cover_key, now, b.error
+                    m.isbn, m.published, m.description, m.page_count, b.cover_key, b.added_at.unwrap_or(now), now,
+                    b.error
                 ],
             )?;
             (tx.last_insert_rowid(), true)
