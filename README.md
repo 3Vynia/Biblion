@@ -48,6 +48,7 @@ pnpm install
 pnpm tauri dev      # development
 pnpm tauri build    # installable bundles
 pnpm test           # UI unit tests
+pnpm e2e            # UI end-to-end tests (mock backend, see dev/)
 ```
 
 Set `BIBLION_DATA_DIR=/some/folder` to use a separate library while testing.
@@ -61,9 +62,11 @@ cargo run --release -p biblion-core --example thumb_bench
 
 ## Status
 
-Work in progress. The core and the CLI work. The desktop app has its first
-version: library folders, scanning with progress, a virtualised cover grid,
-search, book details and an EPUB/MOBI/AZW3 reader.
+Work in progress. The core and the CLI work. The desktop app has a home
+screen with "continue reading", a virtualised cover grid with filters,
+authors, series, subjects and collections, full book details, an
+EPUB/MOBI/AZW3 reader with themes, highlights, notes and bookmarks, and a
+Notes screen for the whole library.
 
 ## License
 

@@ -111,6 +111,17 @@ apps/desktop/
   iframes, and the CSP (`script-src 'self'`) keeps scripts inside books from
   running. The position is saved as an EPUB CFI plus a percentage via
   `set_progress`, debounced to once per second and flushed on close.
+- **Highlights, notes and bookmarks** live in the `bookmarks` table (v3
+  migration). A highlight stores its CFI range, the passage and an optional
+  note; foliate-js draws it through its overlayer and reports clicks on it.
+  The Notes screen lists them across the library (newest first, filterable by
+  kind, colour and text) and opens the book at the exact place.
+- **Edits are always confirmed.** Renaming or deleting collections, taking
+  books out of a collection, deleting highlights or bookmarks and changing an
+  existing note go through a shared confirmation dialog.
+- **UI tests:** `dev/mock.html` runs the real UI in a browser against an
+  in-memory imitation of the commands (`dev/mockBackend.ts`), with a small
+  original EPUB in `dev/fixtures`. `pnpm e2e` drives it with Playwright.
 - **PDF covers (next):** a background UI task walks
   `books_without_cover("pdf")`, renders page 1 with pdf.js and calls
   `set_cover`.
