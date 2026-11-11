@@ -139,6 +139,8 @@ pub struct BookQuery {
     pub format: Option<Format>,
     pub favorites_only: bool,
     pub reading_only: bool,
+    /// Only books marked as finished.
+    pub finished_only: bool,
     pub include_missing: bool,
     pub sort: SortBy,
     pub offset: u32,

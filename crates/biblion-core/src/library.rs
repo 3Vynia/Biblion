@@ -173,6 +173,11 @@ impl Library {
         self.user_write(|c| db::remove_from_shelf(c, shelf, book))
     }
 
+    /// Ids of the shelves (collections) a book belongs to.
+    pub fn book_shelves(&self, id: BookId) -> Result<Vec<i64>> {
+        self.read(|c| db::book_shelves(c, id))
+    }
+
     pub fn list_shelves(&self) -> Result<Vec<Shelf>> {
         self.read(db::list_shelves)
     }
