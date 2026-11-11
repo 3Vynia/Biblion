@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use crate::covers::CoverCache;
 use crate::scanner::{self, ScanEvent, ScanOptions, ScanReport};
 use crate::{
-    db, formats, AuthorEntry, Book, BookId, BookStats, BookQuery, BookSummary, Error, Format, LibraryStats, Metadata, Page, Result,
+    db, formats, Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, NewAnnotation, Book, BookId, BookStats, BookQuery, BookSummary, Error, Format, LibraryStats, Metadata, Page, Result,
     Shelf, TagEntry,
 };
 
@@ -244,6 +244,34 @@ impl Library {
             let v = stmt.query_map(rusqlite::params![format.as_str(), limit], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
             Ok(v)
         })
+    }
+
+    // ── Highlights, notes and bookmarks ────────────────────────────────────
+
+    pub fn add_annotation(&self, a: &NewAnnotation) -> Result<i64> {
+        self.user_write(|c| db::add_annotation(c, a))
+    }
+
+    /// `note`: `Some("")` removes it, `None` keeps it. `color`: `None` keeps it.
+    pub fn update_annotation(&self, id: i64, note: Option<&str>, color: Option<&str>) -> Result<()> {
+        self.user_write(|c| db::update_annotation(c, id, note, color))
+    }
+
+    pub fn delete_annotation(&self, id: i64) -> Result<()> {
+        self.user_write(|c| db::delete_annotation(c, id))
+    }
+
+    pub fn book_annotations(&self, book: BookId) -> Result<Vec<Annotation>> {
+        self.read(|c| db::book_annotations(c, book))
+    }
+
+    pub fn list_annotations(&self, q: &AnnotationQuery) -> Result<Page<AnnotationEntry>> {
+        self.read(|c| db::list_annotations(c, q))
+    }
+
+    /// (highlights, bookmarks) in the whole library.
+    pub fn annotation_counts(&self) -> Result<(u64, u64)> {
+        self.read(db::annotation_counts)
     }
 
     // ── Analysis ──────────────────────────────────────────────────────────
