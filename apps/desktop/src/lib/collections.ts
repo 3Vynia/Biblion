@@ -48,3 +48,23 @@ export async function deleteCollection(shelf: Shelf): Promise<boolean> {
   library.changed()
   return true
 }
+
+/** Confirms, then takes the books out of the collection (they stay in the library). */
+export async function removeFromCollection(shelf: Shelf, books: number[]): Promise<boolean> {
+  const n = books.length
+  const ok = await confirm({
+    title: `Remove ${formatCount(n)} ${n === 1 ? 'book' : 'books'} from “${shelf.name}”?`,
+    message: `${n === 1 ? 'It stays' : 'They stay'} in your library; only the collection changes.`,
+    confirmLabel: 'Remove from collection',
+    danger: true,
+  })
+  if (!ok) return false
+  try {
+    await api.removeFromShelf(shelf.id, books)
+  } catch (e) {
+    await confirm({ title: 'Could not update the collection', message: errorMessage(e), confirmLabel: 'OK' })
+    return false
+  }
+  library.changed()
+  return true
+}
