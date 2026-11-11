@@ -11,7 +11,12 @@ interface Row extends BookSummary {
   added_at: number
   read_at: number | null
   finished: boolean
+  tags: string[]
+  language: string
 }
+
+const SUBJECTS = ['Science Fiction', 'History', 'Poetry', 'Fantasy', 'Mystery', 'Philosophy']
+const LANGUAGES = ['en', 'en', 'es', 'fr', 'de']
 
 const rows: Row[] = Array.from({ length: 3000 }, (_, i) => {
   const reading = i % 37 === 0
@@ -30,6 +35,8 @@ const rows: Row[] = Array.from({ length: 3000 }, (_, i) => {
     added_at: NOW - i * 3600,
     read_at: reading || done ? NOW - ((i * 977) % 100000) : null,
     finished: done,
+    tags: [SUBJECTS[i % SUBJECTS.length], ...(i % 4 === 0 ? [SUBJECTS[(i + 1) % SUBJECTS.length]] : [])],
+    language: LANGUAGES[i % LANGUAGES.length],
   }
 })
 const shelves: Shelf[] = [{ id: 1, name: 'To read', book_count: 0 }]
@@ -45,6 +52,8 @@ function query(q: BookQuery) {
   if (q.author_id) list = list.filter((r) => AUTHORS.indexOf(r.authors[0]) + 1 === q.author_id)
   if (q.series) list = list.filter((r) => r.series?.toLowerCase() === q.series!.toLowerCase())
   if (q.format) list = list.filter((r) => r.format === q.format)
+  if (q.tag) list = list.filter((r) => r.tags.some((t) => t.toLowerCase() === q.tag!.toLowerCase()))
+  if (q.language) list = list.filter((r) => r.language === q.language!.toLowerCase())
   if (q.shelf_id) list = list.filter((r) => shelfBooks.get(q.shelf_id!)?.has(r.id))
   if (q.favorites_only) list = list.filter((r) => r.favorite)
   if (q.reading_only) list = list.filter((r) => r.read_at !== null && !r.finished)
@@ -58,7 +67,9 @@ function query(q: BookQuery) {
     relevance: (a, b) => cmp(a.title, b.title),
   }
   list.sort(by[q.sort ?? 'title'])
-  const items = list.slice(q.offset, q.offset + q.limit).map(({ added_at: _a, read_at: _r, finished: _f, ...s }) => s)
+  const items = list
+    .slice(q.offset, q.offset + q.limit)
+    .map(({ added_at: _a, read_at: _r, finished: _f, tags: _t, language: _l, ...s }) => s)
   return { items, total: list.length, offset: q.offset }
 }
 
@@ -77,11 +88,11 @@ function book(id: number): Book {
       series: r.series,
       series_index: r.series_index,
       publisher: 'Mock Press',
-      language: 'en',
+      language: r.language,
       isbn: null,
       published: '2019-04-12',
       description: 'A mock book used to test the interface.',
-      tags: ['Fiction', 'Adventure'],
+      tags: r.tags,
       page_count: null,
       subtitle: id % 2 ? 'A Novel' : null,
       contributors: [{ name: 'Tess Translator', role: 'trl' }],
@@ -171,6 +182,33 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       if (args.member) set.add(args.book as number)
       else set.delete(args.book as number)
       return null
+    }
+    case 'rename_shelf': {
+      const s = shelves.find((x) => x.id === args.id)
+      if (!s) throw { code: 'not_found', message: 'not found' }
+      if (shelves.some((x) => x !== s && x.name.toLowerCase() === (args.name as string).toLowerCase()))
+        throw { code: 'already_exists', message: 'A collection with that name already exists' }
+      s.name = args.name as string
+      return null
+    }
+    case 'delete_shelf': {
+      const i = shelves.findIndex((x) => x.id === args.id)
+      if (i < 0) throw { code: 'not_found', message: 'not found' }
+      shelves.splice(i, 1)
+      shelfBooks.delete(args.id as number)
+      return null
+    }
+    case 'list_tags': {
+      const prefix = ((args.prefix as string | null) ?? '').toLowerCase()
+      const items = SUBJECTS.filter((s) => s.toLowerCase().startsWith(prefix))
+        .sort()
+        .map((name, i) => ({ id: i + 1, name, book_count: count((r) => r.tags.includes(name)) }))
+      return { items: items.slice(args.offset as number, (args.offset as number) + (args.limit as number)), total: items.length, offset: args.offset }
+    }
+    case 'list_languages': {
+      const counts = new Map<string, number>()
+      for (const r of rows) counts.set(r.language, (counts.get(r.language) ?? 0) + 1)
+      return [...counts].sort((a, b) => b[1] - a[1])
     }
     case 'book_shelves':
       return [...shelfBooks].filter(([, s]) => s.has(args.id as number)).map(([id]) => id)
