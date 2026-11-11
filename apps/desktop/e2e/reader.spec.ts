@@ -76,3 +76,39 @@ test('bookmark the page; removing it asks first', async ({ page }) => {
   await page.getByRole('alertdialog').getByRole('button', { name: 'Remove bookmark' }).click()
   await expect(page.getByRole('button', { name: 'Bookmark this page' })).toHaveAttribute('aria-pressed', 'false')
 })
+
+test('the Notes screen lists, filters, opens and deletes highlights', async ({ page }) => {
+  const frame = await openReader(page)
+  await selectText(frame, 20)
+  await page.getByRole('button', { name: 'Highlight in pink' }).click()
+  await page.getByRole('button', { name: 'Back to the library' }).click()
+
+  await page.getByRole('button', { name: /^Notes/ }).click()
+  const quote = page.locator('article.quote')
+  await expect(quote).toHaveCount(1)
+  await expect(quote).toContainText('The keeper kept a lo')
+
+  // Colour and text filters.
+  await page.getByRole('radio', { name: 'Blue' }).click()
+  await expect(page.getByText('Nothing matches these filters.')).toBeVisible()
+  await page.getByRole('radio', { name: 'Pink' }).click()
+  await expect(quote).toHaveCount(1)
+  await page.getByRole('radio', { name: 'Pink' }).click()
+  await page.getByPlaceholder('Search quotes and notes').fill('windowsill')
+  await expect(page.getByText('Nothing matches these filters.')).toBeVisible()
+  await page.getByPlaceholder('Search quotes and notes').fill('keeper')
+  await expect(quote).toHaveCount(1)
+
+  // Opens the book at the quote.
+  await quote.locator('.body').click()
+  await expect(page.getByRole('dialog', { name: /^Reading/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Back to the library' }).click()
+
+  // Deleting asks first.
+  await quote.getByRole('button', { name: 'Delete' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect(quote).toHaveCount(1)
+  await quote.getByRole('button', { name: 'Delete' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete highlight' }).click()
+  await expect(quote).toHaveCount(0)
+})
