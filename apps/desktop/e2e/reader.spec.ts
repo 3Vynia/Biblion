@@ -1,0 +1,78 @@
+import { expect, test, type Frame, type Page } from '@playwright/test'
+
+/** Opens the first book (an EPUB served from dev/fixtures/sample.epub). */
+async function openReader(page: Page): Promise<Frame> {
+  await page.goto('/dev/mock.html')
+  await page.getByRole('button', { name: /All books/ }).click()
+  await page.locator('.cell .card').first().dblclick()
+  await expect(page.getByRole('dialog', { name: /^Reading/ })).toBeVisible()
+  let frame: Frame | undefined
+  await expect
+    .poll(async () => {
+      for (const f of page.frames()) {
+        if (f.url().startsWith('blob:') && (await f.locator('p').count().catch(() => 0)) > 0) frame = f
+      }
+      return !!frame
+    })
+    .toBe(true)
+  return frame!
+}
+
+/** Selects the first `chars` characters of the first paragraph on the page. */
+async function selectText(frame: Frame, chars: number) {
+  await frame.evaluate((n) => {
+    const p = document.querySelector('p')!
+    const range = document.createRange()
+    range.setStart(p.firstChild!, 0)
+    range.setEnd(p.firstChild!, n)
+    const sel = document.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+    document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+  }, chars)
+}
+
+test('highlight a passage, see it in Notes, then delete it after confirming', async ({ page }) => {
+  const frame = await openReader(page)
+  await selectText(frame, 20)
+  await page.getByRole('button', { name: 'Highlight in green' }).click()
+
+  await page.getByRole('button', { name: 'Highlights and bookmarks' }).click()
+  const panel = page.getByRole('complementary', { name: 'notes' })
+  await expect(panel).toContainText('Highlights 1')
+  await expect(panel).toContainText('The keeper kept a lo')
+
+  await panel.locator('li').hover()
+  await panel.getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByRole('alertdialog')).toContainText('Delete this highlight?')
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect(panel).toContainText('Highlights 1')
+
+  await panel.locator('li').hover()
+  await panel.getByRole('button', { name: 'Delete' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Delete highlight' }).click()
+  await expect(panel).toContainText('Highlights 0')
+})
+
+test('a highlight with a note', async ({ page }) => {
+  const frame = await openReader(page)
+  await selectText(frame, 14)
+  await page.getByRole('toolbar', { name: 'Selection' }).getByRole('button', { name: 'Note', exact: true }).click()
+  await page.getByPlaceholder('Write a note…').fill('Lovely opening')
+  await page.getByRole('button', { name: 'Save' }).click()
+  await page.getByRole('button', { name: 'Highlights and bookmarks' }).click()
+  await expect(page.getByRole('complementary', { name: 'notes' })).toContainText('Lovely opening')
+})
+
+test('bookmark the page; removing it asks first', async ({ page }) => {
+  await openReader(page)
+  const button = page.getByRole('button', { name: 'Bookmark this page' })
+  await button.click()
+  const marked = page.getByRole('button', { name: 'Remove bookmark' })
+  await expect(marked).toHaveAttribute('aria-pressed', 'true')
+
+  await marked.click()
+  await expect(page.getByRole('alertdialog')).toContainText('Remove this bookmark?')
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove bookmark' }).click()
+  await expect(page.getByRole('button', { name: 'Bookmark this page' })).toHaveAttribute('aria-pressed', 'false')
+})
