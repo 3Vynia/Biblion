@@ -82,6 +82,7 @@ fn main() {
             commands::list_tags,
             commands::list_languages,
             commands::set_in_shelf,
+            commands::remove_from_shelf,
             commands::book_shelves,
             commands::set_progress,
         ])

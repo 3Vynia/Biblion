@@ -310,6 +310,18 @@ pub async fn set_in_shelf(state: State<'_, AppState>, shelf: i64, book: BookId, 
     blocking(move || if member { lib.add_to_shelf(shelf, book) } else { lib.remove_from_shelf(shelf, book) }).await
 }
 
+/// Number of books per call; more than this is a bug in the UI.
+const MAX_BATCH: usize = 100_000;
+
+#[tauri::command]
+pub async fn remove_from_shelf(state: State<'_, AppState>, shelf: i64, books: Vec<BookId>) -> CmdResult<usize> {
+    if books.len() > MAX_BATCH {
+        return Err(CmdError::new("invalid_argument", "too many books in one request"));
+    }
+    let lib = state.lib.clone();
+    blocking(move || lib.remove_many_from_shelf(shelf, &books)).await
+}
+
 #[tauri::command]
 pub async fn book_shelves(state: State<'_, AppState>, id: BookId) -> CmdResult<Vec<i64>> {
     let lib = state.lib.clone();
