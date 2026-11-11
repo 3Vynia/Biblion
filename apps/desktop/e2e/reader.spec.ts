@@ -18,18 +18,18 @@ async function openReader(page: Page): Promise<Frame> {
   return frame!
 }
 
-/** Selects the first `chars` characters of the first paragraph on the page. */
-async function selectText(frame: Frame, chars: number) {
-  await frame.evaluate((n) => {
+/** Selects characters [from, to) of the first paragraph on the page. */
+async function selectText(frame: Frame, to: number, from = 0) {
+  await frame.evaluate(([n, start]) => {
     const p = document.querySelector('p')!
     const range = document.createRange()
-    range.setStart(p.firstChild!, 0)
+    range.setStart(p.firstChild!, start)
     range.setEnd(p.firstChild!, n)
     const sel = document.getSelection()!
     sel.removeAllRanges()
     sel.addRange(range)
     document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
-  }, chars)
+  }, [to, from] as const)
 }
 
 test('highlight a passage, see it in Notes, then delete it after confirming', async ({ page }) => {
@@ -111,4 +111,32 @@ test('the Notes screen lists, filters, opens and deletes highlights', async ({ p
   await quote.getByRole('button', { name: 'Delete' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Delete highlight' }).click()
   await expect(quote).toHaveCount(0)
+})
+
+test('define a word: offline first, Wiktionary as a fallback', async ({ page }) => {
+  const frame = await openReader(page)
+  // "keeper" (characters 4–10 of "The keeper kept a logbook").
+  await selectText(frame, 10, 4)
+  await page.getByRole('toolbar', { name: 'Selection' }).getByRole('button', { name: 'Define' }).click()
+  const card = page.getByRole('dialog', { name: 'Definition of keeper' })
+  await expect(card).toContainText('A person who looks after something')
+  await expect(card).toContainText('Test English Dictionary')
+  await page.keyboard.press('Escape')
+  await expect(card).toHaveCount(0)
+
+  // "kept" is not in the offline dictionary: Wiktionary answers.
+  await selectText(frame, 15, 11)
+  await page.getByRole('toolbar', { name: 'Selection' }).getByRole('button', { name: 'Define' }).click()
+  const online = page.getByRole('dialog', { name: 'Definition of kept' })
+  await expect(online).toContainText('A test sense of kept.')
+  await expect(online).toContainText('Wiktionary')
+  await expect(online.locator('b, i')).toHaveCount(0)
+})
+
+test('long selections offer no Define button', async ({ page }) => {
+  const frame = await openReader(page)
+  await selectText(frame, 25)
+  const menu = page.getByRole('toolbar', { name: 'Selection' })
+  await expect(menu.getByRole('button', { name: 'Note', exact: true })).toBeVisible()
+  await expect(menu.getByRole('button', { name: 'Define' })).toHaveCount(0)
 })

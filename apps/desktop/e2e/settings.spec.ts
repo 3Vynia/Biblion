@@ -47,3 +47,21 @@ test('the book panel shows full metadata and stats', async ({ page }) => {
   await panel.locator('.tag').first().click()
   await expect(page.getByRole('heading', { name: subject, level: 1 })).toBeVisible()
 })
+
+test('dictionaries are listed and removing one asks first; online lookups can be turned off', async ({ page }) => {
+  await page.getByRole('button', { name: 'Settings' }).click()
+  const row = page.locator('.folder', { hasText: 'Test English Dictionary' })
+  await expect(row).toBeVisible()
+  await row.getByRole('button', { name: 'Remove' }).click()
+  await expect(page.getByRole('alertdialog')).toContainText('Remove “Test English Dictionary”?')
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect(row).toBeVisible()
+  await row.getByRole('button', { name: 'Remove' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Remove dictionary' }).click()
+  await expect(page.getByText('No offline dictionaries yet.')).toBeVisible()
+
+  const online = page.getByRole('switch', { name: /Look words up online/ })
+  await expect(online).toBeChecked()
+  await page.getByText('Look words up online').click()
+  await expect(online).not.toBeChecked()
+})
