@@ -76,7 +76,10 @@
 
   // Sliding highlight behind the active entry (main list only).
   let navEl: HTMLElement
-  let indicator = $state({ top: 0, height: 0, visible: false })
+  // Separate values so the effect below only writes them (never reads).
+  let indicatorTop = $state(0)
+  let indicatorHeight = $state(0)
+  let indicatorVisible = $state(false)
 
   $effect(() => {
     void active
@@ -84,7 +87,11 @@
     void collapsed
     const update = () => {
       const el = navEl?.querySelector<HTMLElement>(`[data-section="${active}"]`)
-      indicator = el ? { top: el.offsetTop, height: el.offsetHeight, visible: true } : { ...indicator, visible: false }
+      indicatorVisible = !!el
+      if (el) {
+        indicatorTop = el.offsetTop
+        indicatorHeight = el.offsetHeight
+      }
     }
     update()
     // Group titles change height when collapsing: measure again once settled.
@@ -120,9 +127,9 @@
   <nav bind:this={navEl} aria-label="Sections">
     <div
       class="indicator"
-      class:visible={indicator.visible}
-      style:transform="translateY({indicator.top}px)"
-      style:height="{indicator.height}px"
+      class:visible={indicatorVisible}
+      style:transform="translateY({indicatorTop}px)"
+      style:height="{indicatorHeight}px"
     ></div>
     {#each groups as group, gi (gi)}
       {#if group.title}

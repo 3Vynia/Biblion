@@ -40,7 +40,7 @@ test('sidebar sections filter the books', async ({ page }) => {
 test('no runtime errors while browsing', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
-  for (const name of [/All books/, /Reading now/, /Authors/, /Series/, /Collections/, /Formats/, /Home/]) {
+  for (const name of [/All books/, /Reading now/, /^Notes/, /Authors/, /Series/, /Subjects/, /Collections/, /Formats/, /Settings/, /Home/]) {
     await page.getByRole('button', { name }).first().click()
     await page.waitForTimeout(300)
   }
