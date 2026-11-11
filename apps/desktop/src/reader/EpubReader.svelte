@@ -4,7 +4,13 @@
   import { onDestroy, onMount, untrack } from 'svelte'
   import { openUrl } from '@tauri-apps/plugin-opener'
   import { api, bookUrl, errorMessage } from '../lib/api'
-  import type { Book } from '../lib/types'
+  import type { Annotation, Book, NewAnnotation } from '../lib/types'
+  import Icon from '../components/Icon.svelte'
+  import { confirm } from '../lib/dialog.svelte'
+  import { DEFAULT_HIGHLIGHT, annotationsToMarkdown, highlightValue, type HighlightColor } from '../lib/highlights'
+  import SelectionMenu from './SelectionMenu.svelte'
+  import AnnotationCard from './AnnotationCard.svelte'
+  import NotesPanel from './NotesPanel.svelte'
   import { THEMES, formatMinutes, readerCss, rendererAttributes } from './readerSettings'
   import { readerSettings } from './settingsStore.svelte'
   import { rise } from '../lib/motion'
@@ -14,10 +20,12 @@
 
   interface Props {
     book: Book
+    /** Open at this position (e.g. a highlight) instead of the saved one. */
+    startAt?: string
     onclose: () => void
   }
 
-  let { book, onclose }: Props = $props()
+  let { book, startAt, onclose }: Props = $props()
 
   const SAVE_DELAY_MS = 1000
   /** Treat the book as finished from this fraction on. */
@@ -25,7 +33,7 @@
   /** Share of the page width that turns pages when clicked (each side). */
   const TAP_ZONE = 0.25
 
-  type Panel = 'toc' | 'search' | 'settings' | null
+  type Panel = 'toc' | 'search' | 'notes' | 'settings' | null
 
   // foliate-js elements are untyped custom elements.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,6 +54,180 @@
   let panel = $state<Panel>(null)
   let barsVisible = $state(true)
   let footnote = $state<{ visible: boolean; type: string | null }>({ visible: false, type: null })
+
+  // ── Highlights and bookmarks ─────────────────────────────────────────
+  let annotations = $state<Annotation[]>([])
+  /** Section index of each highlight, to redraw it when its section loads. */
+  const sectionOf = new Map<string, number>()
+  let selection = $state<{ x: number; y: number; range: Range; index: number } | null>(null)
+  let card = $state<{ annotation: Annotation; x: number; y: number; editing: boolean } | null>(null)
+  /** CFI range of the page on screen, for the bookmark button. */
+  let pageCfi = $state<string | null>(null)
+  let pageText = ''
+  let lastAnnotationClick = 0
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let Overlayer: any = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let CFI: any = null
+
+  const pageBookmark = $derived.by(() => {
+    if (!pageCfi || !CFI) return undefined
+    const start = CFI.collapse(pageCfi)
+    const end = CFI.collapse(pageCfi, true)
+    return annotations.find(
+      (a) => a.kind === 'bookmark' && CFI.compare(a.locator, start) >= 0 && CFI.compare(a.locator, end) <= 0,
+    )
+  })
+
+  /** Reading order: position in the book, then exact place on the page. */
+  function inReadingOrder(list: Annotation[]): Annotation[] {
+    return [...list].sort((p, q) => p.percent - q.percent || (CFI ? CFI.compare(p.locator, q.locator) : p.id - q.id))
+  }
+
+  async function drawHighlight(a: Annotation) {
+    try {
+      const result = await view.addAnnotation({ value: a.locator })
+      if (result) sectionOf.set(a.locator, result.index)
+    } catch (e) {
+      console.warn('could not place a highlight', e)
+    }
+  }
+
+  function onDrawAnnotation(e: CustomEvent) {
+    const a = annotations.find((x) => x.locator === e.detail.annotation.value)
+    e.detail.draw(Overlayer.highlight, { color: highlightValue(a?.color) })
+  }
+
+  function onCreateOverlay(e: CustomEvent) {
+    const index = e.detail.index
+    for (const a of annotations) if (a.kind === 'highlight' && sectionOf.get(a.locator) === index) drawHighlight(a)
+  }
+
+  /** Window coordinates of a range inside one of the book's iframes. */
+  function windowRect(range: Range) {
+    const r = range.getBoundingClientRect()
+    const frame = range.startContainer.ownerDocument?.defaultView?.frameElement?.getBoundingClientRect()
+    return { left: (frame?.left ?? 0) + r.left, top: (frame?.top ?? 0) + r.top, width: r.width, height: r.height }
+  }
+
+  function onShowAnnotation(e: CustomEvent) {
+    lastAnnotationClick = Date.now()
+    const a = annotations.find((x) => x.locator === e.detail.value)
+    if (!a) return
+    const r = windowRect(e.detail.range)
+    selection = null
+    card = { annotation: a, x: r.left + r.width / 2, y: r.top, editing: false }
+  }
+
+  function checkSelection(doc: Document, index: number) {
+    const sel = doc.getSelection()
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+      selection = null
+      return
+    }
+    const range = sel.getRangeAt(0)
+    const r = windowRect(range)
+    card = null
+    selection = { x: r.left + r.width / 2, y: r.top, range, index }
+  }
+
+  function clearSelection() {
+    selection?.range.startContainer.ownerDocument?.getSelection()?.removeAllRanges()
+    selection = null
+  }
+
+  async function createHighlight(color: HighlightColor, withNote = false) {
+    if (!selection) return
+    const { range, index, x, y } = selection
+    const text = range.toString().trim()
+    const draft: NewAnnotation = {
+      book_id: book.id,
+      kind: 'highlight',
+      locator: view.getCFI(index, range),
+      text,
+      note: null,
+      color,
+      chapter: chapter || null,
+      percent: fraction,
+    }
+    clearSelection()
+    try {
+      const id = await api.addAnnotation(draft)
+      const a: Annotation = { ...draft, id, created_at: Date.now() / 1000, updated_at: Date.now() / 1000 }
+      annotations = inReadingOrder([...annotations, a])
+      await drawHighlight(a)
+      if (withNote) card = { annotation: a, x, y, editing: true }
+    } catch (e) {
+      console.error('could not save the highlight', e)
+    }
+  }
+
+  async function copySelection() {
+    if (!selection) return
+    await navigator.clipboard?.writeText(selection.range.toString()).catch(() => {})
+    clearSelection()
+  }
+
+  function replace(a: Annotation) {
+    annotations = annotations.map((x) => (x.id === a.id ? a : x))
+    if (card?.annotation.id === a.id) card = { ...card, annotation: a }
+  }
+
+  async function recolor(a: Annotation, color: HighlightColor) {
+    if (a.color === color) return
+    await api.updateAnnotation(a.id, null, color)
+    replace({ ...a, color })
+    view.addAnnotation({ value: a.locator }) // redraws with the new colour
+  }
+
+  async function saveNote(a: Annotation, note: string) {
+    await api.updateAnnotation(a.id, note, null)
+    replace({ ...a, note: note || null })
+  }
+
+  async function deleteAnnotation(a: Annotation) {
+    const isBookmark = a.kind === 'bookmark'
+    const ok = await confirm({
+      title: isBookmark ? 'Remove this bookmark?' : 'Delete this highlight?',
+      message: isBookmark
+        ? `${a.chapter ?? 'This page'} · ${Math.round(a.percent * 100)}%`
+        : `“${a.text.length > 140 ? a.text.slice(0, 140) + '…' : a.text}”${a.note ? '\nIts note will be deleted too.' : ''}\nThis can't be undone.`,
+      confirmLabel: isBookmark ? 'Remove bookmark' : 'Delete highlight',
+      danger: true,
+    })
+    if (!ok) return
+    await api.deleteAnnotation(a.id)
+    annotations = annotations.filter((x) => x.id !== a.id)
+    if (card?.annotation.id === a.id) card = null
+    if (!isBookmark) view.deleteAnnotation({ value: a.locator })
+  }
+
+  async function toggleBookmark() {
+    if (pageBookmark) return deleteAnnotation(pageBookmark)
+    if (!pageCfi || !CFI) return
+    const draft: NewAnnotation = {
+      book_id: book.id,
+      kind: 'bookmark',
+      locator: CFI.collapse(pageCfi),
+      text: pageText,
+      note: null,
+      color: null,
+      chapter: chapter || null,
+      percent: fraction,
+    }
+    const id = await api.addAnnotation(draft)
+    annotations = inReadingOrder([...annotations, { ...draft, id, created_at: Date.now() / 1000, updated_at: Date.now() / 1000 }])
+  }
+
+  function goToAnnotation(a: Annotation) {
+    panel = null
+    view.goTo(a.locator)?.catch?.((e: unknown) => console.error('navigation failed', e))
+  }
+
+  async function copyAllNotes() {
+    const md = annotationsToMarkdown(title, book.metadata.authors, annotations)
+    await navigator.clipboard?.writeText(md).catch(() => {})
+  }
 
   let pending: { cfi: string; fraction: number } | null = null
   let saveTimer: ReturnType<typeof setTimeout> | undefined
@@ -78,6 +260,10 @@
     tocHref = d.tocItem?.href ?? null
     page = d.location?.total ? { current: d.location.current + 1, total: d.location.total } : null
     minutesLeft = typeof d.time?.section === 'number' ? d.time.section : null
+    pageCfi = d.cfi ?? null
+    pageText = (d.range?.toString?.() ?? '').replace(/\s+/g, ' ').trim().slice(0, 160)
+    selection = null
+    card = null
     if (d.cfi) {
       pending = { cfi: d.cfi, fraction: typeof d.fraction === 'number' ? d.fraction : fraction }
       clearTimeout(saveTimer)
@@ -113,7 +299,9 @@
         view.goRight()
         break
       case 'Escape':
-        if (footnote.visible) closeFootnote()
+        if (card) card = null
+        else if (selection) clearSelection()
+        else if (footnote.visible) closeFootnote()
         else if (panel) panel = null
         else onclose()
         break
@@ -136,12 +324,19 @@
     const frame = doc?.defaultView?.frameElement
     if (!frame) return
     const x = frame.getBoundingClientRect().left + e.clientX
-    const bounds = host.getBoundingClientRect()
-    const rel = (x - bounds.left) / bounds.width
-    if (panel) panel = null
-    else if (rel < TAP_ZONE) view.goLeft()
-    else if (rel > 1 - TAP_ZONE) view.goRight()
-    else barsVisible = !barsVisible
+    // Let a click on a highlight (handled by foliate) win over page turning.
+    setTimeout(() => {
+      if (Date.now() - lastAnnotationClick < 80) return
+      const bounds = host.getBoundingClientRect()
+      const rel = (x - bounds.left) / bounds.width
+      if (card || selection) {
+        card = null
+        selection = null
+      } else if (panel) panel = null
+      else if (rel < TAP_ZONE) view.goLeft()
+      else if (rel > 1 - TAP_ZONE) view.goRight()
+      else barsVisible = !barsVisible
+    }, 0)
   }
 
   function commitSlider() {
@@ -206,7 +401,15 @@
   // ── Loading ────────────────────────────────────────────────────────────
 
   async function load() {
-    await Promise.all([import('../../vendor/foliate-js/view.js'), readerSettings.load(), setupFootnotes()])
+    const [, , , overlayer, cfi] = await Promise.all([
+      import('../../vendor/foliate-js/view.js'),
+      readerSettings.load(),
+      setupFootnotes(),
+      import('../../vendor/foliate-js/overlayer.js'),
+      import('../../vendor/foliate-js/epubcfi.js'),
+    ])
+    Overlayer = overlayer.Overlayer
+    CFI = cfi
     const res = await fetch(bookUrl(book.id))
     if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
     const blob = await res.blob()
@@ -216,11 +419,16 @@
     view.addEventListener('relocate', onRelocate)
     view.addEventListener('link', onLink)
     view.addEventListener('external-link', onExternalLink)
+    view.addEventListener('draw-annotation', onDrawAnnotation)
+    view.addEventListener('create-overlay', onCreateOverlay)
+    view.addEventListener('show-annotation', onShowAnnotation)
     // Key presses and clicks inside the book's iframes do not reach the window.
     view.addEventListener('load', (e: CustomEvent) => {
       const doc: Document | undefined = e.detail?.doc
+      const index: number = e.detail?.index
       doc?.addEventListener('keydown', onKey)
       doc?.addEventListener('click', onDocClick)
+      doc?.addEventListener('pointerup', () => setTimeout(() => checkSelection(doc, index), 10))
     })
     host.append(view)
     await view.open(file)
@@ -228,7 +436,10 @@
     for (const [name, value] of Object.entries(rendererAttributes(settings, bookWidth))) view.renderer.setAttribute(name, value)
     view.renderer.setStyles?.(readerCss(settings))
 
-    const lastLocation = book.progress?.locator || undefined
+    annotations = inReadingOrder(await api.bookAnnotations(book.id).catch(() => []))
+    for (const a of annotations) if (a.kind === 'highlight') drawHighlight(a)
+
+    const lastLocation = startAt || book.progress?.locator || undefined
     try {
       await view.init({ lastLocation, showTextStart: !lastLocation })
     } catch (e) {
@@ -270,22 +481,44 @@
   style:--r-muted={theme.muted}
   style:--r-hover={theme.dark ? 'rgb(255 255 255 / 0.06)' : 'rgb(0 0 0 / 0.05)'}
   style:color-scheme={theme.dark ? 'dark' : 'light'}
+  style:--overlayer-highlight-opacity={theme.dark ? 0.42 : 0.38}
+  style:--overlayer-highlight-blend-mode={theme.dark ? 'screen' : 'multiply'}
 >
   <header class:hidden={!barsVisible}>
-    <button class="icon" onclick={onclose} title="Back to the library (Esc)">←</button>
+    <button class="icon" onclick={onclose} title="Back to the library (Esc)" aria-label="Back to the library"
+      ><Icon name="chevronLeft" size={20} /></button
+    >
     <div class="heading">
       <span class="title">{title}</span>
       {#if chapter}<span class="chapter">{chapter}</span>{/if}
     </div>
+    <button
+      class="icon bookmark"
+      class:marked={!!pageBookmark}
+      onclick={toggleBookmark}
+      disabled={status !== 'ready'}
+      title={pageBookmark ? 'Remove bookmark' : 'Bookmark this page'}
+      aria-label={pageBookmark ? 'Remove bookmark' : 'Bookmark this page'}
+      aria-pressed={!!pageBookmark}
+    >
+      <Icon name="bookmark" size={18} filled={!!pageBookmark} />
+    </button>
     <button class="icon" class:on={panel === 'toc'} onclick={() => togglePanel('toc')} title="Contents" aria-label="Contents"
-      >☰</button
+      ><Icon name="menu" size={18} /></button
+    >
+    <button
+      class="icon"
+      class:on={panel === 'notes'}
+      onclick={() => togglePanel('notes')}
+      title="Highlights and bookmarks"
+      aria-label="Highlights and bookmarks"><Icon name="quote" size={18} /></button
     >
     <button
       class="icon"
       class:on={panel === 'search'}
       onclick={() => togglePanel('search')}
       title="Search in book (Ctrl+F)"
-      aria-label="Search in book">⌕</button
+      aria-label="Search in book"><Icon name="search" size={18} /></button
     >
     <button
       class="icon"
@@ -314,6 +547,9 @@
         {#if panel === 'toc'}
           <h3>Contents</h3>
           <TocPanel {toc} currentHref={tocHref} ongo={go} />
+        {:else if panel === 'notes'}
+          <h3>Notes</h3>
+          <NotesPanel {annotations} ongo={goToAnnotation} ondelete={deleteAnnotation} oncopyall={copyAllNotes} />
         {:else if panel === 'search'}
           <h3>Search</h3>
           <SearchPanel {view} ongo={(cfi) => view.goTo(cfi)} />
@@ -352,6 +588,30 @@
         · {formatMinutes(minutesLeft)} left in chapter{/if}
     </span>
   </footer>
+
+  {#if selection}
+    <SelectionMenu
+      x={selection.x}
+      y={selection.y}
+      onhighlight={(c) => createHighlight(c)}
+      onnote={() => createHighlight(DEFAULT_HIGHLIGHT, true)}
+      oncopy={copySelection}
+    />
+  {/if}
+  {#if card}
+    {#key card.annotation.id}
+      <AnnotationCard
+        annotation={card.annotation}
+        x={card.x}
+        y={card.y}
+        editing={card.editing}
+        onrecolor={(c) => card && recolor(card.annotation, c)}
+        onsavenote={(n) => (card ? saveNote(card.annotation, n) : undefined)}
+        ondelete={() => card && deleteAnnotation(card.annotation)}
+        onclose={() => (card = null)}
+      />
+    {/key}
+  {/if}
 </div>
 
 <style>
@@ -407,9 +667,28 @@
     border-radius: 8px;
   }
 
+  .icon {
+    display: grid;
+    place-items: center;
+  }
+
   .icon:hover:not(:disabled),
   .icon.on {
     background: var(--r-hover);
+  }
+
+  .bookmark.marked {
+    color: var(--r-link);
+  }
+
+  .bookmark.marked :global(svg) {
+    animation: drop 380ms var(--ease);
+  }
+
+  @keyframes drop {
+    from {
+      transform: translateY(-6px) scaleY(1.3);
+    }
   }
 
   .heading {
