@@ -15,6 +15,8 @@ export interface UiSettings {
   coverSize: CoverSize
   showCaptions: boolean
   scanOnStartup: boolean
+  /** Ask Wiktionary when no offline dictionary knows a word. */
+  onlineDictionary: boolean
 }
 
 export const DEFAULT_UI: UiSettings = {
@@ -25,6 +27,7 @@ export const DEFAULT_UI: UiSettings = {
   coverSize: 'medium',
   showCaptions: true,
   scanOnStartup: true,
+  onlineDictionary: true,
 }
 
 /** Light / dark variants of each accent. */
@@ -54,6 +57,7 @@ export function normalizeUi(raw: unknown): UiSettings {
     coverSize: pick(r.coverSize, ['small', 'medium', 'large'] as const, d.coverSize),
     showCaptions: bool(r.showCaptions, d.showCaptions),
     scanOnStartup: bool(r.scanOnStartup, d.scanOnStartup),
+    onlineDictionary: bool(r.onlineDictionary, d.onlineDictionary),
   }
 }
 

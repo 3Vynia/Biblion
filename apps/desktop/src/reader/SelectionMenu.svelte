@@ -11,9 +11,11 @@
     onhighlight: (color: HighlightColor) => void
     onnote: () => void
     oncopy: () => void
+    /** Only for short selections (a word or a short phrase). */
+    ondefine?: () => void
   }
 
-  let { x, y, onhighlight, onnote, oncopy }: Props = $props()
+  let { x, y, onhighlight, onnote, oncopy, ondefine }: Props = $props()
   // Keep it on screen; flip below the selection near the top edge.
   const below = $derived(y < 70)
 </script>
@@ -37,6 +39,9 @@
     ></button>
   {/each}
   <span class="sep"></span>
+  {#if ondefine}
+    <button class="action" onclick={ondefine} title="Look up in the dictionary"><Icon name="define" size={16} /> Define</button>
+  {/if}
   <button class="action" onclick={onnote} title="Highlight and add a note"><Icon name="note" size={16} /> Note</button>
   <button class="action" onclick={oncopy} title="Copy text"><Icon name="copy" size={15} /> Copy</button>
 </div>

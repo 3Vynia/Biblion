@@ -181,3 +181,18 @@ export interface AnnotationEntry {
   cover_key: string | null
   format: Format
 }
+
+export interface DictionaryInfo {
+  /** Path of the .ifo inside the dictionaries folder. */
+  id: string
+  name: string
+  word_count: number
+}
+
+export interface Definition {
+  dictionary: string
+  word: string
+  body: string
+  /** Body is HTML-like markup; it is always shown as plain text. */
+  markup: boolean
+}

@@ -11,6 +11,9 @@
   import SelectionMenu from './SelectionMenu.svelte'
   import AnnotationCard from './AnnotationCard.svelte'
   import NotesPanel from './NotesPanel.svelte'
+  import DictionaryCard from './DictionaryCard.svelte'
+  import { wordFromSelection } from '../lib/dictionary'
+  import { ui } from '../lib/uiSettings.svelte'
   import { THEMES, formatMinutes, readerCss, rendererAttributes } from './readerSettings'
   import { readerSettings } from './settingsStore.svelte'
   import { rise } from '../lib/motion'
@@ -61,6 +64,14 @@
   const sectionOf = new Map<string, number>()
   let selection = $state<{ x: number; y: number; range: Range; index: number } | null>(null)
   let card = $state<{ annotation: Annotation; x: number; y: number; editing: boolean } | null>(null)
+  let defining = $state<{ word: string; x: number; y: number } | null>(null)
+  const selectedWord = $derived(selection ? wordFromSelection(selection.range.toString()) : null)
+
+  function define() {
+    if (!selection || !selectedWord) return
+    defining = { word: selectedWord, x: selection.x, y: selection.y }
+    clearSelection()
+  }
   /** CFI range of the page on screen, for the bookmark button. */
   let pageCfi = $state<string | null>(null)
   let pageText = ''
@@ -264,6 +275,7 @@
     pageText = (d.range?.toString?.() ?? '').replace(/\s+/g, ' ').trim().slice(0, 160)
     selection = null
     card = null
+    defining = null
     if (d.cfi) {
       pending = { cfi: d.cfi, fraction: typeof d.fraction === 'number' ? d.fraction : fraction }
       clearTimeout(saveTimer)
@@ -299,7 +311,8 @@
         view.goRight()
         break
       case 'Escape':
-        if (card) card = null
+        if (defining) defining = null
+        else if (card) card = null
         else if (selection) clearSelection()
         else if (footnote.visible) closeFootnote()
         else if (panel) panel = null
@@ -329,9 +342,10 @@
       if (Date.now() - lastAnnotationClick < 80) return
       const bounds = host.getBoundingClientRect()
       const rel = (x - bounds.left) / bounds.width
-      if (card || selection) {
+      if (card || selection || defining) {
         card = null
         selection = null
+        defining = null
       } else if (panel) panel = null
       else if (rel < TAP_ZONE) view.goLeft()
       else if (rel > 1 - TAP_ZONE) view.goRight()
@@ -596,7 +610,20 @@
       onhighlight={(c) => createHighlight(c)}
       onnote={() => createHighlight(DEFAULT_HIGHLIGHT, true)}
       oncopy={copySelection}
+      ondefine={selectedWord ? define : undefined}
     />
+  {/if}
+  {#if defining}
+    {#key defining.word}
+      <DictionaryCard
+        word={defining.word}
+        x={defining.x}
+        y={defining.y}
+        online={ui.value.onlineDictionary}
+        bookLanguage={book.metadata.language}
+        onclose={() => (defining = null)}
+      />
+    {/key}
   {/if}
   {#if card}
     {#key card.annotation.id}
