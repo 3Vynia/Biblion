@@ -1,6 +1,11 @@
 <script lang="ts">
-  import { api, errorMessage, thumbUrl } from '../lib/api'
-  import { FORMAT_LABEL, READABLE, formatBytes, formatDate, placeholderHue, plainText } from '../lib/format'
+  import BookCover from './BookCover.svelte'
+  import Icon from './Icon.svelte'
+  import { api, errorMessage } from '../lib/api'
+  import { FORMAT_LABEL, READABLE, formatBytes, formatDate, plainText } from '../lib/format'
+  import { library } from '../lib/library.svelte'
+  import { slideIn } from '../lib/motion'
+  import { authorRoute, nav, seriesRoute } from '../lib/nav.svelte'
   import type { Book } from '../lib/types'
 
   interface Props {
@@ -13,49 +18,99 @@
 
   let book = $state<Book | null>(null)
   let error = $state<string | null>(null)
-  let coverBroken = $state(false)
+  let memberOf = $state<number[]>([])
+  let heartPop = $state(0)
+
+  async function load(current: number) {
+    try {
+      const [b, shelves] = await Promise.all([api.getBook(current), api.bookShelves(current)])
+      if (current !== id) return
+      book = b
+      memberOf = shelves
+    } catch (e) {
+      if (current === id) error = errorMessage(e)
+    }
+  }
 
   $effect(() => {
     const current = id
-    book = null
+    void library.revision
     error = null
-    coverBroken = false
-    api
-      .getBook(current)
-      .then((b) => {
-        if (current === id) book = b
-      })
-      .catch((e) => {
-        if (current === id) error = errorMessage(e)
-      })
+    load(current)
   })
+
+  async function toggleFavorite() {
+    if (!book) return
+    const next = !book.favorite
+    book = { ...book, favorite: next }
+    if (next) heartPop++
+    try {
+      await api.setFavorite(book.id, next)
+      library.changed()
+    } catch (e) {
+      book = { ...book, favorite: !next }
+      error = errorMessage(e)
+    }
+  }
+
+  async function toggleShelf(shelf: number) {
+    if (!book) return
+    const member = !memberOf.includes(shelf)
+    memberOf = member ? [...memberOf, shelf] : memberOf.filter((s) => s !== shelf)
+    try {
+      await api.setInShelf(shelf, book.id, member)
+      library.changed()
+    } catch (e) {
+      error = errorMessage(e)
+    }
+  }
+
+  async function openAuthor(name: string) {
+    try {
+      const page = await api.listAuthors(name, 0, 20)
+      const match = page.items.find((a) => a.name.toLowerCase() === name.toLowerCase())
+      if (match) nav.go(authorRoute(match.id, match.name))
+    } catch (e) {
+      console.error('could not open author', e)
+    }
+  }
 
   const description = $derived(book?.metadata.description ? plainText(book.metadata.description) : '')
   const canRead = $derived(!!book && !book.missing && READABLE.has(book.format))
+  const started = $derived(!!book?.progress && book.progress.percent > 0 && !book.progress.finished)
 </script>
 
-<aside class="detail" aria-label="Book details">
-  <button class="ghost close" onclick={onclose} aria-label="Close details">✕</button>
+<aside class="detail" aria-label="Book details" in:slideIn>
+  <button class="ghost close" onclick={onclose} aria-label="Close details"><Icon name="close" size={18} /></button>
 
-  {#if error}
+  {#if error && !book}
     <p class="error">Could not load this book: {error}</p>
   {:else if !book}
-    <p class="muted">Loading…</p>
+    <div class="loading"><div class="cover skeleton"></div></div>
   {:else}
     {@const m = book.metadata}
     {@const title = m.title ?? book.path.split('/').pop() ?? 'Untitled'}
+    <div class="backdrop" aria-hidden="true">
+      <BookCover {title} coverKey={book.cover_key} lazy={false} />
+    </div>
+
     <div class="cover">
-      {#if book.cover_key && !coverBroken}
-        <img src={thumbUrl(book.cover_key)} alt="Cover of {title}" onerror={() => (coverBroken = true)} />
-      {:else}
-        <div class="placeholder" style:--hue={placeholderHue(title)}>{title}</div>
-      {/if}
+      <BookCover {title} author={m.authors[0]} coverKey={book.cover_key} lazy={false} />
     </div>
 
     <h2>{title}</h2>
-    <p class="authors">{m.authors.join(', ') || 'Unknown author'}</p>
+    <p class="authors">
+      {#each m.authors as author, i (author)}
+        <button class="link" onclick={() => openAuthor(author)}>{author}</button>{i < m.authors.length - 1 ? ', ' : ''}
+      {:else}
+        <span class="muted">Unknown author</span>
+      {/each}
+    </p>
     {#if m.series}
-      <p class="series">{m.series}{m.series_index !== null ? ` · #${m.series_index}` : ''}</p>
+      <button class="link series" onclick={() => nav.go(seriesRoute(m.series!))}>
+        <Icon name="layers" size={14} />
+        {m.series}{m.series_index !== null ? ` · #${m.series_index}` : ''}
+      </button>
     {/if}
 
     {#if book.missing}
@@ -63,13 +118,25 @@
     {/if}
 
     <div class="actions">
-      <button class="primary" disabled={!canRead} onclick={() => book && onread(book)}>
-        {book.progress && book.progress.percent > 0 && !book.progress.finished ? 'Continue reading' : 'Read'}
+      <button class="primary read" disabled={!canRead} onclick={() => book && onread(book)}>
+        <Icon name="play" size={14} filled />
+        {started ? 'Continue reading' : book.progress?.finished ? 'Read again' : 'Read'}
       </button>
-      {#if !READABLE.has(book.format)}
-        <span class="muted small">{FORMAT_LABEL[book.format]} reader coming soon</span>
-      {/if}
+      <button
+        class="icon-btn heart"
+        class:on={book.favorite}
+        onclick={toggleFavorite}
+        aria-pressed={book.favorite}
+        title={book.favorite ? 'Remove from favourites' : 'Add to favourites'}
+      >
+        {#key heartPop}
+          <span class="heart-icon" class:pop={heartPop > 0 && book.favorite}><Icon name="heart" size={18} filled={book.favorite} /></span>
+        {/key}
+      </button>
     </div>
+    {#if !READABLE.has(book.format)}
+      <p class="muted small">{FORMAT_LABEL[book.format]} reader coming soon</p>
+    {/if}
 
     {#if book.progress}
       <div class="progress-row">
@@ -77,6 +144,16 @@
         <span class="muted small">{book.progress.finished ? 'Finished' : `${Math.round(book.progress.percent * 100)}%`}</span>
       </div>
     {/if}
+
+    <div class="shelves">
+      {#each library.shelves as shelf (shelf.id)}
+        {@const member = memberOf.includes(shelf.id)}
+        <button class="chip" class:on={member} onclick={() => toggleShelf(shelf.id)} aria-pressed={member}>
+          <Icon name={member ? 'check' : shelf.id === library.toRead?.id ? 'bookmark' : 'plus'} size={13} strokeWidth={2.2} />
+          {shelf.name}
+        </button>
+      {/each}
+    </div>
 
     {#if description}
       <p class="description">{description}</p>
@@ -96,6 +173,7 @@
       <dt>File</dt>
       <dd class="path" title={book.path}>{book.path}</dd>
     </dl>
+    {#if error}<p class="error small">{error}</p>{/if}
   {/if}
 </aside>
 
@@ -104,46 +182,62 @@
     position: relative;
     height: 100%;
     overflow-y: auto;
-    padding: 24px;
+    overflow-x: hidden;
+    padding: 28px 24px;
     background: var(--surface);
     border-left: 1px solid var(--border);
+    isolation: isolate;
+  }
+
+  .backdrop {
+    position: absolute;
+    inset: -60px -60px auto;
+    height: 340px;
+    z-index: -1;
+    opacity: 0.35;
+    filter: blur(40px) saturate(1.4);
+    mask-image: linear-gradient(to bottom, #000 30%, transparent);
   }
 
   .close {
     position: absolute;
     top: 10px;
     right: 10px;
+    padding: 6px;
+    border-radius: 50%;
+    z-index: 1;
   }
 
   .cover {
-    width: 180px;
-    margin: 8px auto 16px;
-    aspect-ratio: 2 / 3;
-    border-radius: 4px;
+    width: 170px;
+    height: 255px;
+    margin: 4px auto 20px;
+    border-radius: 4px 8px 8px 4px;
     overflow: hidden;
-    box-shadow: var(--shadow);
+    box-shadow: var(--shadow-lift);
+    animation: settle 600ms var(--ease) both;
   }
 
-  .cover img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  @keyframes settle {
+    from {
+      transform: translateY(10px) rotate(-3deg) scale(0.96);
+      opacity: 0;
+    }
   }
 
-  .placeholder {
-    height: 100%;
-    padding: 16px;
-    background: linear-gradient(160deg, hsl(var(--hue) 35% 38%), hsl(var(--hue) 40% 24%));
-    color: hsl(var(--hue) 30% 92%);
-    font-family: var(--serif);
-    font-size: 17px;
+  .loading .cover {
+    animation: none;
+  }
+
+  .skeleton {
+    background: var(--surface-2);
   }
 
   h2 {
     font-family: var(--serif);
-    font-size: 21px;
+    font-size: 22px;
     line-height: 1.25;
-    margin: 0 0 4px;
+    margin: 0 0 6px;
   }
 
   .authors {
@@ -151,17 +245,78 @@
     font-size: 15px;
   }
 
+  .link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 30%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  .link:hover:not(:disabled) {
+    background: none;
+    color: var(--accent);
+    text-decoration-color: currentColor;
+  }
+
   .series {
-    margin: 4px 0 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
     color: var(--muted);
     font-style: italic;
+    text-decoration: none;
   }
 
   .actions {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin: 18px 0 10px;
+    gap: 8px;
+    margin: 20px 0 10px;
+  }
+
+  .read {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 18px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+
+  .icon-btn {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border-radius: 50%;
+  }
+
+  .heart.on {
+    color: #e11d48;
+    border-color: color-mix(in srgb, #e11d48 40%, transparent);
+    background: color-mix(in srgb, #e11d48 10%, var(--surface));
+  }
+
+  .heart-icon {
+    display: grid;
+  }
+
+  .heart-icon.pop {
+    animation: pop 480ms var(--ease);
+  }
+
+  @keyframes pop {
+    30% {
+      transform: scale(1.45);
+    }
+    60% {
+      transform: scale(0.9);
+    }
   }
 
   .small {
@@ -187,10 +342,34 @@
     background: var(--accent);
   }
 
+  .shelves {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 16px 0 4px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 11px;
+    border-radius: 14px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .chip.on {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: var(--accent-soft);
+    font-weight: 600;
+  }
+
   .description {
     white-space: pre-line;
-    line-height: 1.5;
-    margin: 16px 0;
+    line-height: 1.55;
+    margin: 18px 0;
   }
 
   dl {
