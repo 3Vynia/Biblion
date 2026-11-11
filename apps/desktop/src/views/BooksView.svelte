@@ -47,7 +47,8 @@
     return (offset, limit) => api.listBooks({ ...query, offset, limit })
   }
 
-  const cache = new PageCache<BookSummary>(untrack(fetcher), () => version++)
+  // `untrack`: reset() calls this synchronously, possibly inside an effect.
+  const cache = new PageCache<BookSummary>(untrack(fetcher), () => untrack(() => version++))
   const total = $derived.by(() => (void version, cache.total))
   const loadError = $derived.by(() => (void version, cache.error))
 
@@ -59,8 +60,10 @@
       firstRun = false
       return
     }
-    cache.reset(f)
-    grid?.scrollToTop()
+    untrack(() => {
+      cache.reset(f)
+      grid?.scrollToTop()
+    })
   })
   let lastRevision = untrack(() => library.revision)
   $effect(() => {

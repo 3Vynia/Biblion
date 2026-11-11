@@ -16,7 +16,7 @@
 
   const fetcher = (prefix: string): Fetcher<AuthorEntry> => (offset, limit) =>
     api.listAuthors(prefix.trim() || null, offset, limit)
-  const cache = new PageCache<AuthorEntry>(fetcher(''), () => version++, 100)
+  const cache = new PageCache<AuthorEntry>(fetcher(''), () => untrack(() => version++), 100)
   const total = $derived.by(() => (void version, cache.total))
 
   let first = true
