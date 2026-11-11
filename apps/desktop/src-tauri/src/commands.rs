@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
-use biblion_core::{AuthorEntry, Book, BookId, BookQuery, BookSummary, Library, LibraryStats, Page, Shelf};
+use biblion_core::{AuthorEntry, Book, BookId, BookStats, BookQuery, BookSummary, Library, LibraryStats, Page, Shelf};
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -114,6 +114,29 @@ pub fn set_reader_settings(state: State<'_, AppState>, value: serde_json::Value)
     .map(|_| ())
 }
 
+#[tauri::command]
+pub fn get_ui_settings(state: State<'_, AppState>) -> Option<serde_json::Value> {
+    state.settings.lock().unwrap().ui.clone()
+}
+
+#[tauri::command]
+pub fn set_ui_settings(state: State<'_, AppState>, value: serde_json::Value) -> CmdResult<()> {
+    if !value.is_object() {
+        return Err(CmdError::new("invalid_argument", "interface settings must be an object"));
+    }
+    update_settings(&state, |s| {
+        s.ui = Some(value);
+        Ok(())
+    })
+    .map(|_| ())
+}
+
+/// Where the library lives (shown in Settings).
+#[tauri::command]
+pub fn data_dir(state: State<'_, AppState>) -> PathBuf {
+    state.settings_path.parent().map(PathBuf::from).unwrap_or_default()
+}
+
 // ── Scanning ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -205,6 +228,12 @@ pub async fn list_series(state: State<'_, AppState>, offset: u32, limit: u32) ->
     let lib = state.lib.clone();
     let limit = limit.clamp(1, MAX_PAGE);
     blocking(move || lib.list_series(offset, limit)).await
+}
+
+#[tauri::command]
+pub async fn analyze_book(state: State<'_, AppState>, id: BookId) -> CmdResult<BookStats> {
+    let lib = state.lib.clone();
+    blocking(move || lib.analyze(id)).await
 }
 
 // ── Collections ──────────────────────────────────────────────────────────

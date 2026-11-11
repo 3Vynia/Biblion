@@ -53,6 +53,21 @@ export interface Metadata {
   description: string | null
   tags: string[]
   page_count: number | null
+  subtitle?: string | null
+  contributors?: { name: string; role: string }[]
+  identifiers?: { scheme: string; value: string }[]
+  rights?: string | null
+  source?: string | null
+  modified?: string | null
+  format_version?: string | null
+}
+
+export interface BookStats {
+  words: number
+  characters: number
+  chapters: number
+  images: number
+  reading_minutes: number
 }
 
 export interface ReadingProgress {

@@ -16,6 +16,8 @@ pub struct Settings {
     /// Reader preferences (theme, font…). Owned and validated by the UI;
     /// stored as-is so new options don't need a backend change.
     pub reader: Option<serde_json::Value>,
+    /// Interface preferences (theme, sidebar…), also owned by the UI.
+    pub ui: Option<serde_json::Value>,
 }
 
 impl Settings {
@@ -103,7 +105,7 @@ mod tests {
         let path = tmp.path().join("settings.json");
         assert_eq!(Settings::load(&path), Settings::default());
 
-        let s = Settings { roots: vec![PathBuf::from("/books")], reader: Some(serde_json::json!({ "theme": "sepia" })) };
+        let s = Settings { roots: vec![PathBuf::from("/books")], reader: Some(serde_json::json!({ "theme": "sepia" })), ui: None };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
 
