@@ -13,6 +13,7 @@
   import FormatsView from './views/FormatsView.svelte'
   import SettingsView from './views/SettingsView.svelte'
   import SubjectsView from './views/SubjectsView.svelte'
+  import NotesView from './views/NotesView.svelte'
   import ConfirmDialog from './components/ConfirmDialog.svelte'
   import { api, errorMessage } from './lib/api'
   import { READABLE } from './lib/format'
@@ -76,6 +77,17 @@
       reading = await api.getBook(summary.id)
     } catch {
       selectedId = summary.id // the detail panel shows the error
+    }
+  }
+
+  /** Opens a book at a given place, e.g. a highlight from the Notes screen. */
+  async function openBookAt(bookId: number, locator: string) {
+    try {
+      const book = await api.getBook(bookId)
+      readingAt = locator
+      reading = book
+    } catch {
+      selectedId = bookId
     }
   }
 
@@ -166,6 +178,8 @@
               <SeriesView />
             {:else if route.name === 'subjects'}
               <SubjectsView />
+            {:else if route.name === 'notes'}
+              <NotesView onopen={openBookAt} />
             {:else if route.name === 'collections'}
               <CollectionsView />
             {:else if route.name === 'formats'}
