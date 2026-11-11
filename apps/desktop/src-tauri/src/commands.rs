@@ -97,6 +97,23 @@ pub fn remove_root(state: State<'_, AppState>, path: PathBuf) -> CmdResult<Vec<P
     })
 }
 
+#[tauri::command]
+pub fn get_reader_settings(state: State<'_, AppState>) -> Option<serde_json::Value> {
+    state.settings.lock().unwrap().reader.clone()
+}
+
+#[tauri::command]
+pub fn set_reader_settings(state: State<'_, AppState>, value: serde_json::Value) -> CmdResult<()> {
+    if !value.is_object() {
+        return Err(CmdError::new("invalid_argument", "reader settings must be an object"));
+    }
+    update_settings(&state, |s| {
+        s.reader = Some(value);
+        Ok(())
+    })
+    .map(|_| ())
+}
+
 // ── Scanning ─────────────────────────────────────────────────────────────
 
 #[tauri::command]
