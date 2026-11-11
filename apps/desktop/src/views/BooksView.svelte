@@ -163,47 +163,51 @@
     {#if nav.canGoBack}
       <button class="ghost back" onclick={() => nav.back()} aria-label="Back"><Icon name="chevronLeft" /></button>
     {/if}
-    <div class="titles">
-      {#if subtitle}<span class="subtitle">{subtitle}</span>{/if}
-      <h1>{text.trim() ? `Results for “${text.trim()}”` : title}</h1>
+    <div class="heading">
+      <div class="titles">
+        {#if subtitle}<span class="subtitle">{subtitle}</span>{/if}
+        <h1>{text.trim() ? `Results for “${text.trim()}”` : title}</h1>
+      </div>
+      <span class="count">
+        {#if total !== null}{formatCount(total)} {total === 1 ? 'book' : 'books'}{/if}
+      </span>
     </div>
-    <span class="count">
-      {#if total !== null}{formatCount(total)} {total === 1 ? 'book' : 'books'}{/if}
-    </span>
-    {#if shelf && !selecting && (total ?? 0) > 0}
-      <button class="ghost icon-btn" onclick={startSelecting} title="Select books to remove" aria-label="Select books"
-        ><Icon name="select" size={16} /></button
-      >
-    {/if}
-    {#if ownShelf && !selecting}
-      <button class="ghost icon-btn" onclick={rename} title="Rename collection" aria-label="Rename collection"
-        ><Icon name="edit" size={16} /></button
-      >
-      <button class="ghost icon-btn danger" onclick={remove} title="Delete collection" aria-label="Delete collection"
-        ><Icon name="trash" size={16} /></button
-      >
-    {/if}
-    <FilterBar base={filter} value={extra} onchange={(v) => (extra = v)} />
-    <label class="sort">
-      <span class="muted">Sort</span>
-      {#if text.trim()}
-        <select
-          value={useRelevance ? 'relevance' : sort}
-          onchange={(e) => {
-            const v = e.currentTarget.value as SortBy
-            useRelevance = v === 'relevance'
-            if (!useRelevance) sort = v
-          }}
+    <div class="tools">
+      {#if shelf && !selecting && (total ?? 0) > 0}
+        <button class="ghost icon-btn" onclick={startSelecting} title="Select books to remove" aria-label="Select books"
+          ><Icon name="select" size={16} /></button
         >
-          <option value="relevance">Relevance</option>
-          {#each SORTS as s (s.value)}<option value={s.value}>{s.label}</option>{/each}
-        </select>
-      {:else}
-        <select bind:value={sort}>
-          {#each SORTS as s (s.value)}<option value={s.value}>{s.label}</option>{/each}
-        </select>
       {/if}
-    </label>
+      {#if ownShelf && !selecting}
+        <button class="ghost icon-btn" onclick={rename} title="Rename collection" aria-label="Rename collection"
+          ><Icon name="edit" size={16} /></button
+        >
+        <button class="ghost icon-btn danger" onclick={remove} title="Delete collection" aria-label="Delete collection"
+          ><Icon name="trash" size={16} /></button
+        >
+      {/if}
+      <FilterBar base={filter} value={extra} onchange={(v) => (extra = v)} />
+      <label class="sort">
+        <span class="muted">Sort</span>
+        {#if text.trim()}
+          <select
+            value={useRelevance ? 'relevance' : sort}
+            onchange={(e) => {
+              const v = e.currentTarget.value as SortBy
+              useRelevance = v === 'relevance'
+              if (!useRelevance) sort = v
+            }}
+          >
+            <option value="relevance">Relevance</option>
+            {#each SORTS as s (s.value)}<option value={s.value}>{s.label}</option>{/each}
+          </select>
+        {:else}
+          <select bind:value={sort}>
+            {#each SORTS as s (s.value)}<option value={s.value}>{s.label}</option>{/each}
+          </select>
+        {/if}
+      </label>
+    </div>
   </header>
 
   <div class="content">
@@ -260,9 +264,26 @@
 
   header {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    padding: 22px 28px 6px;
+  }
+
+  /* Title and count keep their room; the tools wrap below when narrow. */
+  .heading {
+    flex: 1 1 220px;
+    display: flex;
     align-items: center;
     gap: 14px;
-    padding: 22px 28px 6px;
+    min-width: 0;
+  }
+
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
   }
 
   .back {
@@ -274,6 +295,10 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+  }
+
+  .sort select {
+    max-width: 170px;
   }
 
   .subtitle {
@@ -295,9 +320,10 @@
   }
 
   .count {
-    flex: 1;
+    flex-shrink: 0;
     color: var(--muted);
     font-variant-numeric: tabular-nums;
+    white-space: nowrap;
     padding-top: 6px;
   }
 
