@@ -8,6 +8,7 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 
 use crate::covers::CoverCache;
+use crate::dictionary::{self, Definition, Dictionary, DictionaryInfo};
 use crate::scanner::{self, ScanEvent, ScanOptions, ScanReport};
 use crate::{
     db, formats, Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, NewAnnotation, Book, BookId, BookStats, BookQuery, BookSummary, Error, Format, LibraryStats, Metadata, Page, Result,
@@ -30,6 +31,8 @@ pub struct Library {
     covers: CoverCache,
     scanning: AtomicBool,
     cancel: AtomicBool,
+    /// Offline dictionaries, loaded on the first lookup.
+    dictionaries: Mutex<Option<std::sync::Arc<Vec<Dictionary>>>>,
 }
 
 impl Library {
@@ -50,6 +53,7 @@ impl Library {
             readers: Mutex::new(Vec::new()),
             scanning: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
+            dictionaries: Mutex::new(None),
         })
     }
 
@@ -272,6 +276,42 @@ impl Library {
     /// (highlights, bookmarks) in the whole library.
     pub fn annotation_counts(&self) -> Result<(u64, u64)> {
         self.read(db::annotation_counts)
+    }
+
+    // ── Dictionaries ─────────────────────────────────────────────────────
+
+    /// Folder with the installed StarDict dictionaries.
+    pub fn dictionaries_dir(&self) -> PathBuf {
+        self.db_path.parent().map(|p| p.join("dictionaries")).unwrap_or_else(|| PathBuf::from("dictionaries"))
+    }
+
+    fn dictionaries(&self) -> std::sync::Arc<Vec<Dictionary>> {
+        let mut slot = self.dictionaries.lock().unwrap();
+        slot.get_or_insert_with(|| std::sync::Arc::new(dictionary::open_all(&self.dictionaries_dir()))).clone()
+    }
+
+    pub fn list_dictionaries(&self) -> Vec<DictionaryInfo> {
+        self.dictionaries().iter().map(|d| d.info.clone()).collect()
+    }
+
+    /// Definitions of `word` in every installed dictionary.
+    pub fn define(&self, word: &str) -> Vec<Definition> {
+        self.dictionaries().iter().flat_map(|d| d.lookup(word)).collect()
+    }
+
+    /// Installs a dictionary from an `.ifo`, `.zip` or `.tar.gz` file.
+    pub fn install_dictionary(&self, source: &Path) -> Result<Vec<DictionaryInfo>> {
+        let dir = self.dictionaries_dir();
+        std::fs::create_dir_all(&dir).map_err(|e| Error::io(&dir, e))?;
+        dictionary::install(&dir, source)?;
+        *self.dictionaries.lock().unwrap() = None;
+        Ok(self.list_dictionaries())
+    }
+
+    pub fn remove_dictionary(&self, id: &str) -> Result<Vec<DictionaryInfo>> {
+        dictionary::remove(&self.dictionaries_dir(), id)?;
+        *self.dictionaries.lock().unwrap() = None;
+        Ok(self.list_dictionaries())
     }
 
     // ── Analysis ──────────────────────────────────────────────────────────
