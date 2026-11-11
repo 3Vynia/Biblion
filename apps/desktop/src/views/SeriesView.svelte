@@ -12,7 +12,7 @@
   type Entry = [string, number]
 
   let version = $state(0)
-  const cache = new PageCache<Entry>((offset, limit) => api.listSeries(offset, limit), () => version++, 100)
+  const cache = new PageCache<Entry>((offset, limit) => api.listSeries(offset, limit), () => untrack(() => version++), 100)
   const total = $derived.by(() => (void version, cache.total))
 
   let lastRevision = untrack(() => library.revision)
