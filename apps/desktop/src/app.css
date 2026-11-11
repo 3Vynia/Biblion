@@ -25,8 +25,28 @@
   background: var(--bg);
 }
 
+/* Dark palette: forced with data-theme="dark", or following the system
+   unless the user forced the light theme. */
+:root[data-theme='dark'] {
+  --bg: #17181a;
+  --surface: #1f2023;
+  --surface-2: #2a2b2f;
+  --sidebar: #1b1c1f;
+  --text: #ebe6dd;
+  --muted: #9b958b;
+  --border: #34353a;
+  --accent: #d9a24a;
+  --accent-strong: #e8b45c;
+  --accent-soft: rgb(217 162 74 / 0.14);
+  --accent-text: #1b1406;
+  --danger: #e0715f;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 14px rgb(0 0 0 / 0.3);
+  --shadow-lift: 0 6px 14px rgb(0 0 0 / 0.45), 0 18px 40px rgb(0 0 0 / 0.4);
+  color-scheme: dark;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --bg: #17181a;
     --surface: #1f2023;
     --surface-2: #2a2b2f;
@@ -140,6 +160,14 @@ select {
 
 .error {
   color: var(--danger);
+}
+
+html.no-motion *,
+html.no-motion *::before,
+html.no-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
