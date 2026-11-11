@@ -13,9 +13,11 @@
 
   let { toc, currentHref, ongo }: Props = $props()
 
-  // Bring the current chapter into view when the panel opens.
+  // Bring the current chapter into view, scrolling only the panel (not the window).
   function scrollIntoViewIfCurrent(el: HTMLElement, current: boolean) {
-    if (current) el.scrollIntoView({ block: 'center' })
+    if (!current) return
+    const panel = el.closest<HTMLElement>('.panel')
+    if (panel) panel.scrollTop = el.offsetTop - panel.clientHeight / 2
   }
 </script>
 
