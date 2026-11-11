@@ -12,6 +12,8 @@ import type {
   BookQuery,
   BookSummary,
   CmdError,
+  Definition,
+  DictionaryInfo,
   LibraryStats,
   NewAnnotation,
   Page,
@@ -63,6 +65,11 @@ export const api = {
   bookAnnotations: (id: BookId) => invoke<Annotation[]>('book_annotations', { id }),
   listAnnotations: (query: AnnotationQuery) => invoke<Page<AnnotationEntry>>('list_annotations', { query }),
   annotationCounts: () => invoke<[number, number]>('annotation_counts'),
+
+  listDictionaries: () => invoke<DictionaryInfo[]>('list_dictionaries'),
+  define: (word: string) => invoke<Definition[]>('define', { word }),
+  installDictionary: (path: string) => invoke<DictionaryInfo[]>('install_dictionary', { path }),
+  removeDictionary: (id: string) => invoke<DictionaryInfo[]>('remove_dictionary', { id }),
 
   analyzeBook: (id: BookId) => invoke<BookStats>('analyze_book', { id }),
   getUiSettings: () => invoke<unknown>('get_ui_settings'),
