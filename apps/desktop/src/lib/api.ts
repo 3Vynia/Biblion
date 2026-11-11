@@ -32,6 +32,9 @@ export const api = {
 
   setProgress: (id: BookId, locator: string, percent: number, finished: boolean) =>
     invoke<void>('set_progress', { id, locator, percent, finished }),
+
+  getReaderSettings: () => invoke<unknown>('get_reader_settings'),
+  setReaderSettings: (value: object) => invoke<void>('set_reader_settings', { value }),
 }
 
 /** URL of a cover thumbnail, served from disk by the `thumb://` scheme. */
