@@ -10,7 +10,7 @@ use rusqlite::Connection;
 use crate::covers::CoverCache;
 use crate::scanner::{self, ScanEvent, ScanOptions, ScanReport};
 use crate::{
-    db, formats, AuthorEntry, Book, BookId, BookQuery, BookSummary, Error, Format, LibraryStats, Metadata, Page, Result,
+    db, formats, AuthorEntry, Book, BookId, BookStats, BookQuery, BookSummary, Error, Format, LibraryStats, Metadata, Page, Result,
     Shelf,
 };
 
@@ -222,6 +222,35 @@ impl Library {
             let v = stmt.query_map(rusqlite::params![format.as_str(), limit], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
             Ok(v)
         })
+    }
+
+    // ── Analysis ──────────────────────────────────────────────────────────
+
+    /// Stats computed earlier for the book's current file, if any.
+    pub fn book_stats(&self, id: BookId) -> Result<Option<BookStats>> {
+        self.read(|c| db::get_stats(c, id))
+    }
+
+    /// Counts words, characters, chapters and images (EPUB) or pages (comics).
+    /// Results are cached until the file changes. Reads the whole book, so
+    /// call it on demand, not for every book during a scan.
+    pub fn analyze(&self, id: BookId) -> Result<BookStats> {
+        if let Some(s) = self.book_stats(id)? {
+            return Ok(s);
+        }
+        let book = self.get_book(id)?;
+        let path = PathBuf::from(&book.path);
+        let format = book.format;
+        let stats = std::panic::catch_unwind(move || match format {
+            Format::Epub => formats::epub::analyze(&path),
+            Format::Cbz | Format::Cbr => {
+                formats::comic::list_pages(&path).map(|p| BookStats::new(0, 0, 0, p.len() as u32))
+            }
+            _ => Err(Error::UnsupportedFormat(format!("content analysis is not available for {}", format.as_str()))),
+        })
+        .map_err(|_| Error::corrupt("analysis", "panic while reading the file"))??;
+        self.user_write(|c| db::put_stats(c, id, &book.fingerprint, &stats))?;
+        Ok(stats)
     }
 
     // ── Comics ────────────────────────────────────────────────────────────

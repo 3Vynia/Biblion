@@ -579,6 +579,34 @@ pub fn list_series(conn: &Connection, offset: u32, limit: u32) -> Result<Page<(S
     Ok(Page { items, total: total as u64, offset })
 }
 
+/// Stats for a book, only if they were computed from its current file.
+pub fn get_stats(conn: &Connection, id: BookId) -> Result<Option<crate::BookStats>> {
+    Ok(conn
+        .query_row(
+            "SELECT s.words, s.characters, s.chapters, s.images FROM book_stats s JOIN books b ON b.id = s.book_id
+             WHERE s.book_id = ?1 AND s.fingerprint = b.fingerprint",
+            [id],
+            |r| {
+                Ok(crate::BookStats::new(
+                    r.get::<_, i64>(0)? as u64,
+                    r.get::<_, i64>(1)? as u64,
+                    r.get(2)?,
+                    r.get(3)?,
+                ))
+            },
+        )
+        .optional()?)
+}
+
+pub fn put_stats(conn: &Connection, id: BookId, fingerprint: &str, s: &crate::BookStats) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO book_stats(book_id, fingerprint, words, characters, chapters, images, analyzed_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7)",
+        params![id, fingerprint, s.words as i64, s.characters as i64, s.chapters, s.images, now()],
+    )?;
+    Ok(())
+}
+
 pub fn book_shelves(conn: &Connection, book: BookId) -> Result<Vec<i64>> {
     let mut stmt = conn.prepare_cached("SELECT shelf_id FROM shelf_books WHERE book_id = ?1")?;
     let ids = stmt.query_map([book], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
