@@ -9,7 +9,7 @@ export const TO_READ = 'To read'
 class LibraryState {
   stats = $state<LibraryStats | null>(null)
   shelves = $state<Shelf[]>([])
-  counts = $state({ reading: 0, favorites: 0, finished: 0 })
+  counts = $state({ reading: 0, favorites: 0, finished: 0, highlights: 0, bookmarks: 0 })
   /** Bumped whenever books change (scan, progress, favourites, collections). */
   revision = $state(0)
 
@@ -26,16 +26,17 @@ class LibraryState {
   async refresh() {
     const count = (q: object) => api.listBooks({ ...q, offset: 0, limit: 1 }).then((p) => p.total)
     try {
-      const [stats, shelves, reading, favorites, finished] = await Promise.all([
+      const [stats, shelves, reading, favorites, finished, [highlights, bookmarks]] = await Promise.all([
         api.stats(),
         api.listShelves(),
         count({ reading_only: true }),
         count({ favorites_only: true }),
         count({ finished_only: true }),
+        api.annotationCounts(),
       ])
       this.stats = stats
       this.shelves = shelves
-      this.counts = { reading, favorites, finished }
+      this.counts = { reading, favorites, finished, highlights, bookmarks }
       if (!this.toRead) {
         await api.createShelf(TO_READ).catch(() => {})
         this.shelves = await api.listShelves()

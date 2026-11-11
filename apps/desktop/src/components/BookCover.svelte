@@ -9,9 +9,11 @@
     author?: string
     coverKey: string | null
     lazy?: boolean
+    /** Tiny covers: the placeholder shows no text (it would not fit). */
+    bare?: boolean
   }
 
-  let { title, author, coverKey, lazy = true }: Props = $props()
+  let { title, author, coverKey, lazy = true, bare = false }: Props = $props()
 
   // Remember which key loaded or failed, so a new cover starts fresh without
   // resetting state in an effect (which could run after the load event).
@@ -43,8 +45,10 @@
     />
   {:else}
     <div class="placeholder">
-      <span class="title">{title}</span>
-      {#if author}<span class="author">{author}</span>{/if}
+      {#if !bare}
+        <span class="title">{title}</span>
+        {#if author}<span class="author">{author}</span>{/if}
+      {/if}
     </div>
   {/if}
 </div>

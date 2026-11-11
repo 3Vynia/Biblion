@@ -22,6 +22,7 @@ export type Route =
   | { name: 'authors' }
   | { name: 'series' }
   | { name: 'subjects' }
+  | { name: 'notes' }
   | { name: 'collections' }
   | { name: 'formats' }
   | { name: 'settings' }
@@ -39,6 +40,7 @@ export type Section =
   | 'authors'
   | 'series'
   | 'subjects'
+  | 'notes'
   | 'collections'
   | 'formats'
   | 'settings'
