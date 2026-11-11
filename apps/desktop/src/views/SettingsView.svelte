@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { open } from '@tauri-apps/plugin-dialog'
+  import { openUrl } from '@tauri-apps/plugin-opener'
+  import { confirm } from '../lib/dialog.svelte'
+  import type { DictionaryInfo } from '../lib/types'
   import Icon, { type IconName } from '../components/Icon.svelte'
   import Switch from '../components/Switch.svelte'
   import SettingsPanel from '../reader/SettingsPanel.svelte'
@@ -32,10 +35,47 @@
   let folderError = $state<string | null>(null)
   let dataDir = $state('')
   let copied = $state(false)
+  let dictionaries = $state<DictionaryInfo[]>([])
+  let dictError = $state<string | null>(null)
+  let installing = $state(false)
+
+  async function addDictionary() {
+    dictError = null
+    const picked = await open({
+      multiple: false,
+      title: 'Choose a StarDict dictionary',
+      filters: [{ name: 'StarDict dictionary', extensions: ['ifo', 'zip', 'gz', 'tgz', 'xz', 'txz', 'tar'] }],
+    })
+    if (typeof picked !== 'string') return
+    installing = true
+    try {
+      dictionaries = await api.installDictionary(picked)
+    } catch (e) {
+      dictError = errorMessage(e)
+    } finally {
+      installing = false
+    }
+  }
+
+  async function removeDictionary(d: DictionaryInfo) {
+    const ok = await confirm({
+      title: `Remove “${d.name}”?`,
+      message: "Its files are deleted from Biblion's data folder. You can add it again later.",
+      confirmLabel: 'Remove dictionary',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      dictionaries = await api.removeDictionary(d.id)
+    } catch (e) {
+      dictError = errorMessage(e)
+    }
+  }
 
   onMount(() => {
     readerSettings.load()
     api.dataDir().then((d) => (dataDir = d)).catch(() => {})
+    api.listDictionaries().then((d) => (dictionaries = d)).catch(() => {})
     // Highlight the section being read in the side index.
     const observer = new IntersectionObserver(
       (entries) => {
@@ -272,6 +312,41 @@
           </p>
           <p>She chose a volume at random, opened it near the middle, and began to read.</p>
         </div>
+      </div>
+
+      <h3>Dictionaries</h3>
+      <p class="hint">
+        Select a word while reading and choose <em>Define</em>. Offline dictionaries in StarDict format are searched first;
+        free ones for many languages are available from
+        <button class="text-link" onclick={() => openUrl('https://freedict.org/downloads/')}>FreeDict</button>.
+      </p>
+      <div class="card">
+        {#each dictionaries as d (d.id)}
+          <div class="folder" in:rise={{ y: 4, duration: 200 }}>
+            <Icon name="define" size={17} />
+            <span class="dict-name">{d.name}</span>
+            <span class="muted dict-count">{formatCount(d.word_count)} words</span>
+            <button class="ghost" onclick={() => removeDictionary(d)}>Remove</button>
+          </div>
+        {:else}
+          <p class="muted">No offline dictionaries yet.</p>
+        {/each}
+        {#if dictError}<p class="error">{dictError}</p>{/if}
+        <div class="buttons">
+          <button onclick={addDictionary} disabled={installing}>
+            <Icon name="plus" size={15} />
+            {installing ? 'Installing…' : 'Add dictionary…'}
+          </button>
+          <span class="hint inline">.ifo, .zip, .tar.gz or .tar.xz</span>
+        </div>
+      </div>
+      <div class="card">
+        <Switch
+          label="Look words up online"
+          description="When no offline dictionary knows a word, ask Wiktionary. Only the word is sent."
+          checked={ui.value.onlineDictionary}
+          onchange={(v) => ui.update({ onlineDictionary: v })}
+        />
       </div>
     </section>
 
@@ -613,7 +688,7 @@
 
   .reading {
     display: grid;
-    grid-template-columns: 300px 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
     gap: 18px;
     align-items: start;
   }
@@ -688,6 +763,42 @@
     font-size: 20px;
     font-weight: 600;
     color: var(--text);
+  }
+
+  .folder button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .dict-name {
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dict-count {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .text-link {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent);
+    text-decoration: underline;
+    font-size: inherit;
+  }
+
+  .hint.inline {
+    margin: 0;
+    align-self: center;
   }
 
   .keys {
