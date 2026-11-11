@@ -5,7 +5,15 @@ import type { BookQuery, Format, SortBy } from './types'
 /** Filters a "books" screen applies on top of the search text. */
 export type BookFilter = Pick<
   BookQuery,
-  'author_id' | 'series' | 'tag' | 'shelf_id' | 'format' | 'favorites_only' | 'reading_only' | 'finished_only'
+  | 'author_id'
+  | 'series'
+  | 'tag'
+  | 'language'
+  | 'shelf_id'
+  | 'format'
+  | 'favorites_only'
+  | 'reading_only'
+  | 'finished_only'
 >
 
 export type Route =
@@ -13,6 +21,7 @@ export type Route =
   | { name: 'books'; title: string; subtitle?: string; filter: BookFilter; sort?: SortBy; section?: Section }
   | { name: 'authors' }
   | { name: 'series' }
+  | { name: 'subjects' }
   | { name: 'collections' }
   | { name: 'formats' }
   | { name: 'settings' }
@@ -29,6 +38,7 @@ export type Section =
   | 'finished'
   | 'authors'
   | 'series'
+  | 'subjects'
   | 'collections'
   | 'formats'
   | 'settings'
@@ -97,7 +107,7 @@ export const tagRoute = (tag: string): BooksRoute => ({
   title: tag,
   subtitle: 'Subject',
   filter: { tag },
-  section: 'all',
+  section: 'subjects',
 })
 
 /** Stable key so a screen re-renders (and re-animates) only when it changes. */
