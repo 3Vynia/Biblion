@@ -117,6 +117,77 @@ impl BookStats {
     }
 }
 
+/// What an annotation marks: a passage (with optional note) or a page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AnnotationKind {
+    Highlight,
+    Bookmark,
+}
+
+impl AnnotationKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AnnotationKind::Highlight => "highlight",
+            AnnotationKind::Bookmark => "bookmark",
+        }
+    }
+}
+
+/// A highlight (quote, with an optional note) or a bookmark in a book.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Annotation {
+    pub id: i64,
+    pub book_id: BookId,
+    pub kind: AnnotationKind,
+    /// Opaque position for the reader (an EPUB CFI or CFI range).
+    pub locator: String,
+    /// The highlighted passage, or the first words of a bookmarked page.
+    pub text: String,
+    pub note: Option<String>,
+    pub color: Option<String>,
+    pub chapter: Option<String>,
+    /// Position in the book, 0.0 – 1.0 (orders annotations in reading order).
+    pub percent: f64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewAnnotation {
+    pub book_id: BookId,
+    pub kind: AnnotationKind,
+    pub locator: String,
+    pub text: String,
+    pub note: Option<String>,
+    pub color: Option<String>,
+    pub chapter: Option<String>,
+    pub percent: f64,
+}
+
+/// Library-wide annotation listing (the Notes screen).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AnnotationQuery {
+    pub book_id: Option<BookId>,
+    pub kind: Option<AnnotationKind>,
+    pub color: Option<String>,
+    /// Matches the passage or the note.
+    pub text: Option<String>,
+    pub offset: u32,
+    pub limit: u32,
+}
+
+/// An annotation with what the UI needs to show its book.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnnotationEntry {
+    pub annotation: Annotation,
+    pub book_title: String,
+    pub book_authors: Vec<String>,
+    pub cover_key: Option<String>,
+    pub format: Format,
+}
+
 /// A book as the UI sees it in listings (lightweight).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BookSummary {

@@ -145,7 +145,28 @@ CREATE TABLE book_stats (
 );
 "#;
 
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2];
+/// v3: highlights and bookmarks share the `bookmarks` table (`highlight`
+/// holds the passage text).
+const SCHEMA_V3: &str = r#"
+ALTER TABLE bookmarks ADD COLUMN kind       TEXT    NOT NULL DEFAULT 'highlight';
+ALTER TABLE bookmarks ADD COLUMN chapter    TEXT;
+ALTER TABLE bookmarks ADD COLUMN percent    REAL    NOT NULL DEFAULT 0;
+ALTER TABLE bookmarks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX bookmarks_recent ON bookmarks(created_at DESC, id DESC);
+"#;
+
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
+
+/// Limits for annotation fields, against runaway selections.
+const MAX_ANNOTATION_TEXT: usize = 20_000;
+const MAX_LOCATOR: usize = 4_096;
+
+fn clip(s: &str, max: usize) -> String {
+    match s.char_indices().nth(max) {
+        Some((i, _)) => s[..i].to_owned(),
+        None => s.to_owned(),
+    }
+}
 
 fn to_json<T: serde::Serialize>(v: &[T]) -> Option<String> {
     (!v.is_empty()).then(|| serde_json::to_string(v).unwrap_or_default())
@@ -609,6 +630,145 @@ pub fn put_stats(conn: &Connection, id: BookId, fingerprint: &str, s: &crate::Bo
         params![id, fingerprint, s.words as i64, s.characters as i64, s.chapters, s.images, now()],
     )?;
     Ok(())
+}
+
+// ───────────────────────────── Annotations ─────────────────────────────
+
+const ANNOTATION_COLS: &str =
+    "a.id, a.book_id, a.kind, a.locator, a.highlight, a.note, a.color, a.chapter, a.percent, a.created_at, a.updated_at";
+
+fn annotation_from_row(r: &Row) -> rusqlite::Result<crate::Annotation> {
+    let kind: String = r.get(2)?;
+    Ok(crate::Annotation {
+        id: r.get(0)?,
+        book_id: r.get(1)?,
+        kind: if kind == "bookmark" { crate::AnnotationKind::Bookmark } else { crate::AnnotationKind::Highlight },
+        locator: r.get(3)?,
+        text: r.get::<_, Option<String>>(4)?.unwrap_or_default(),
+        note: r.get(5)?,
+        color: r.get(6)?,
+        chapter: r.get(7)?,
+        percent: r.get(8)?,
+        created_at: r.get(9)?,
+        updated_at: r.get(10)?,
+    })
+}
+
+pub fn add_annotation(conn: &Connection, a: &crate::NewAnnotation) -> Result<i64> {
+    if a.locator.is_empty() || a.locator.len() > MAX_LOCATOR {
+        return Err(crate::Error::corrupt("annotation", "invalid position"));
+    }
+    let note = a.note.as_deref().map(str::trim).filter(|n| !n.is_empty()).map(|n| clip(n, MAX_ANNOTATION_TEXT));
+    let ts = now();
+    conn.execute(
+        "INSERT INTO bookmarks(book_id, kind, locator, highlight, note, color, chapter, percent, created_at, updated_at)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?9)",
+        params![
+            a.book_id,
+            a.kind.as_str(),
+            a.locator,
+            clip(a.text.trim(), MAX_ANNOTATION_TEXT),
+            note,
+            a.color.as_deref().map(|c| clip(c, 32)),
+            a.chapter.as_deref().map(|c| clip(c, 500)),
+            a.percent.clamp(0.0, 1.0),
+            ts
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// `note`: `Some("")` removes it, `None` keeps it. `color`: `None` keeps it.
+pub fn update_annotation(conn: &Connection, id: i64, note: Option<&str>, color: Option<&str>) -> Result<()> {
+    let n = conn.execute(
+        "UPDATE bookmarks SET
+           note = CASE WHEN ?2 THEN ?3 ELSE note END,
+           color = COALESCE(?4, color),
+           updated_at = ?5
+         WHERE id = ?1",
+        params![
+            id,
+            note.is_some(),
+            note.map(str::trim).filter(|n| !n.is_empty()).map(|n| clip(n, MAX_ANNOTATION_TEXT)),
+            color.map(|c| clip(c, 32)),
+            now()
+        ],
+    )?;
+    if n == 0 {
+        return Err(crate::Error::NotFound(format!("annotation {id}")));
+    }
+    Ok(())
+}
+
+pub fn delete_annotation(conn: &Connection, id: i64) -> Result<()> {
+    if conn.execute("DELETE FROM bookmarks WHERE id = ?1", [id])? == 0 {
+        return Err(crate::Error::NotFound(format!("annotation {id}")));
+    }
+    Ok(())
+}
+
+/// All annotations of a book, in reading order.
+pub fn book_annotations(conn: &Connection, book: BookId) -> Result<Vec<crate::Annotation>> {
+    let mut stmt =
+        conn.prepare_cached(&format!("SELECT {ANNOTATION_COLS} FROM bookmarks a WHERE a.book_id = ?1 ORDER BY a.percent, a.id"))?;
+    let v = stmt.query_map([book], annotation_from_row)?.collect::<std::result::Result<_, _>>()?;
+    Ok(v)
+}
+
+/// Annotations across the library, newest first, with their books.
+pub fn list_annotations(conn: &Connection, q: &crate::AnnotationQuery) -> Result<Page<crate::AnnotationEntry>> {
+    let mut wheres: Vec<&str> = Vec::new();
+    let mut args: Vec<Box<dyn ToSql>> = Vec::new();
+    if let Some(b) = q.book_id {
+        wheres.push("a.book_id = ?");
+        args.push(Box::new(b));
+    }
+    if let Some(k) = q.kind {
+        wheres.push("a.kind = ?");
+        args.push(Box::new(k.as_str()));
+    }
+    if let Some(c) = q.color.as_deref().filter(|c| !c.is_empty()) {
+        wheres.push("a.color = ?");
+        args.push(Box::new(c.to_owned()));
+    }
+    if let Some(t) = q.text.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
+        wheres.push("(a.highlight LIKE ? ESCAPE '\\' OR a.note LIKE ? ESCAPE '\\' OR b.title LIKE ? ESCAPE '\\')");
+        let like = format!("%{}%", t.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
+        for _ in 0..3 {
+            args.push(Box::new(like.clone()));
+        }
+    }
+    let where_sql = if wheres.is_empty() { String::new() } else { format!(" WHERE {}", wheres.join(" AND ")) };
+    let from = format!(" FROM bookmarks a JOIN books b ON b.id = a.book_id{where_sql}");
+    let total: i64 = conn.query_row(&format!("SELECT COUNT(*){from}"), params_from_iter(args.iter()), |r| r.get(0))?;
+    let limit = q.limit.clamp(1, 1000);
+    let sql = format!(
+        "SELECT {ANNOTATION_COLS}, b.title, b.authors, b.cover_key, b.format{from}
+         ORDER BY a.created_at DESC, a.id DESC LIMIT {limit} OFFSET {}",
+        q.offset
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let items = stmt
+        .query_map(params_from_iter(args.iter()), |r| {
+            Ok(crate::AnnotationEntry {
+                annotation: annotation_from_row(r)?,
+                book_title: r.get(11)?,
+                book_authors: split_list(r.get(12)?),
+                cover_key: r.get(13)?,
+                format: parse_format(r.get(14)?),
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(Page { items, total: total as u64, offset: q.offset })
+}
+
+/// (highlights, bookmarks) in the whole library.
+pub fn annotation_counts(conn: &Connection) -> Result<(u64, u64)> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(SUM(kind = 'highlight'), 0), COALESCE(SUM(kind = 'bookmark'), 0) FROM bookmarks",
+        [],
+        |r| Ok((r.get::<_, i64>(0)? as u64, r.get::<_, i64>(1)? as u64)),
+    )?)
 }
 
 pub fn book_shelves(conn: &Connection, book: BookId) -> Result<Vec<i64>> {

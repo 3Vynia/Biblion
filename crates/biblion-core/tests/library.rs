@@ -408,3 +408,63 @@ fn remove_many_books_from_a_collection() {
     assert_eq!(lib.remove_many_from_shelf(shelf, &ids[..2]).unwrap(), 0);
     assert_eq!(lib.stats().unwrap().books, 3);
 }
+
+#[test]
+fn highlights_notes_and_bookmarks() {
+    use biblion_core::{AnnotationKind, AnnotationQuery, NewAnnotation};
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    write_epub(&books.join("a.epub"), "Alpha", "Ann Author", 1);
+    write_epub(&books.join("b.epub"), "Beta", "Ben Author", 2);
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    scan(&lib, &books);
+    let (a, b) = (find(&lib, "alpha")[0].id, find(&lib, "beta")[0].id);
+
+    let new = |book, kind, locator: &str, text: &str, color: Option<&str>, percent| NewAnnotation {
+        book_id: book,
+        kind,
+        locator: locator.into(),
+        text: text.into(),
+        note: None,
+        color: color.map(Into::into),
+        chapter: Some("Chapter 1".into()),
+        percent,
+    };
+    let h1 = lib.add_annotation(&new(a, AnnotationKind::Highlight, "epubcfi(/6/4!/4/2,/1:0,/1:10)", "It was a dark night", Some("yellow"), 0.5)).unwrap();
+    let h2 = lib.add_annotation(&new(a, AnnotationKind::Highlight, "epubcfi(/6/2!/4/2,/1:0,/1:5)", "First words", Some("blue"), 0.1)).unwrap();
+    let bm = lib.add_annotation(&new(a, AnnotationKind::Bookmark, "epubcfi(/6/8!/4/2/1:0)", "Page start", None, 0.9)).unwrap();
+    lib.add_annotation(&new(b, AnnotationKind::Highlight, "epubcfi(/6/2!/4/2,/1:0,/1:3)", "Beta quote", Some("yellow"), 0.3)).unwrap();
+
+    // Per book, in reading order.
+    let in_a: Vec<i64> = lib.book_annotations(a).unwrap().iter().map(|x| x.id).collect();
+    assert_eq!(in_a, [h2, h1, bm]);
+
+    // Notes can be added and changed; colour too.
+    lib.update_annotation(h1, Some("Great opening"), Some("pink")).unwrap();
+    let h = lib.book_annotations(a).unwrap().into_iter().find(|x| x.id == h1).unwrap();
+    assert_eq!((h.note.as_deref(), h.color.as_deref()), (Some("Great opening"), Some("pink")));
+    lib.update_annotation(h1, Some("  "), None).unwrap();
+    let h = lib.book_annotations(a).unwrap().into_iter().find(|x| x.id == h1).unwrap();
+    assert_eq!((h.note, h.color.as_deref()), (None, Some("pink")), "blank notes are removed, colour kept");
+
+    // Library-wide listing with filters, newest first, with book details.
+    let q = |q: AnnotationQuery| lib.list_annotations(&q).unwrap();
+    let all = q(AnnotationQuery { limit: 10, ..Default::default() });
+    assert_eq!(all.total, 4);
+    assert_eq!(all.items[0].book_title, "Beta");
+    let yellow = q(AnnotationQuery { color: Some("yellow".into()), limit: 10, ..Default::default() });
+    assert_eq!(yellow.total, 1);
+    let marks = q(AnnotationQuery { kind: Some(AnnotationKind::Bookmark), limit: 10, ..Default::default() });
+    assert_eq!(marks.items.iter().map(|x| x.annotation.id).collect::<Vec<_>>(), [bm]);
+    let found = q(AnnotationQuery { text: Some("dark".into()), limit: 10, ..Default::default() });
+    assert_eq!(found.total, 1);
+    let wildcard = q(AnnotationQuery { text: Some("%".into()), limit: 10, ..Default::default() });
+    assert_eq!(wildcard.total, 0, "% and _ are matched literally");
+    let of_b = q(AnnotationQuery { book_id: Some(b), limit: 10, ..Default::default() });
+    assert_eq!(of_b.total, 1);
+    assert_eq!(lib.annotation_counts().unwrap(), (3, 1), "highlights, bookmarks");
+
+    lib.delete_annotation(h2).unwrap();
+    assert!(matches!(lib.delete_annotation(h2), Err(biblion_core::Error::NotFound(_))));
+    assert_eq!(lib.book_annotations(a).unwrap().len(), 2);
+}
