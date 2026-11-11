@@ -10,7 +10,16 @@ mockConvertFileSrc('linux')
 const realFetch = window.fetch.bind(window)
 window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-  return url.startsWith('book://') ? realFetch('/dev/fixtures/sample.epub', init) : realFetch(input, init)
+  if (url.startsWith('book://')) return realFetch('/dev/fixtures/sample.epub', init)
+  // Never reach the real Wiktionary from tests: answer with a fixed entry.
+  if (url.startsWith('https://en.wiktionary.org/')) {
+    const word = decodeURIComponent(url.split('/').pop() ?? '')
+    const body = {
+      en: [{ partOfSpeech: 'Noun', language: 'English', definitions: [{ definition: `A <b>test</b> sense of <i>${word}</i>.` }] }],
+    }
+    return Promise.resolve(new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } }))
+  }
+  return realFetch(input, init)
 }
 mockIPC((cmd, args) => handle(cmd, (args ?? {}) as Record<string, unknown>))
 await import('../src/main')

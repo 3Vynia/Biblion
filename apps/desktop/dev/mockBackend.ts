@@ -120,6 +120,12 @@ const annotations: Annotation[] = []
 let nextAnnotation = 1
 let clock = NOW
 
+let dictionaries = [{ id: 'en/test.ifo', name: 'Test English Dictionary', word_count: 2 }]
+const DEFINITIONS: Record<string, string> = {
+  keeper: 'A person who looks after something, such as a lighthouse.',
+  logbook: 'A book in which a record of events is kept.',
+}
+
 let readerSettings: unknown = null
 let uiSettings: unknown = null
 declare global {
@@ -272,6 +278,19 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       })
       return { items, total: list.length, offset: q.offset }
     }
+    case 'list_dictionaries':
+      return dictionaries
+    case 'define': {
+      const word = (args.word as string).toLowerCase().replace(/s$/, '')
+      const body = dictionaries.length ? DEFINITIONS[word] : undefined
+      return body ? [{ dictionary: dictionaries[0].name, word, body, markup: false }] : []
+    }
+    case 'install_dictionary':
+      dictionaries = [...dictionaries, { id: 'new/new.ifo', name: 'Installed Dictionary', word_count: 1000 }]
+      return dictionaries
+    case 'remove_dictionary':
+      dictionaries = dictionaries.filter((d) => d.id !== args.id)
+      return dictionaries
     case 'annotation_counts':
       return [annotations.filter((a) => a.kind === 'highlight').length, annotations.filter((a) => a.kind === 'bookmark').length]
     case 'analyze_book':
