@@ -2,22 +2,47 @@
   --bg: #f6f1e7;
   --surface: #fffaf0;
   --surface-2: #efe6d5;
+  --sidebar: #efe7d8;
   --text: #2b2118;
   --muted: #7a6b5a;
   --border: #ddd0b8;
   --accent: #9a6b1f;
+  --accent-strong: #87591a;
+  --accent-soft: rgb(154 107 31 / 0.12);
   --accent-text: #fffaf0;
   --danger: #a33a2b;
   --shadow: 0 1px 2px rgb(43 33 24 / 0.12), 0 4px 14px rgb(43 33 24 / 0.08);
+  --shadow-lift: 0 6px 14px rgb(43 33 24 / 0.16), 0 18px 40px rgb(43 33 24 / 0.14);
   --radius: 8px;
   --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
 
   color-scheme: light;
   font-family: var(--font);
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --surface: #1f2023;
+    --surface-2: #2a2b2f;
+    --sidebar: #1b1c1f;
+    --text: #ebe6dd;
+    --muted: #9b958b;
+    --border: #34353a;
+    --accent: #d9a24a;
+    --accent-strong: #e8b45c;
+    --accent-soft: rgb(217 162 74 / 0.14);
+    --accent-text: #1b1406;
+    --danger: #e0715f;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 4px 14px rgb(0 0 0 / 0.3);
+    --shadow-lift: 0 6px 14px rgb(0 0 0 / 0.45), 0 18px 40px rgb(0 0 0 / 0.4);
+    color-scheme: dark;
+  }
 }
 
 * {
@@ -40,10 +65,18 @@ button {
   background: var(--surface);
   border-radius: 6px;
   padding: 6px 12px;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms var(--ease);
 }
 
 button:hover:not(:disabled) {
   background: var(--surface-2);
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 button:disabled {
@@ -58,7 +91,7 @@ button.primary {
 }
 
 button.primary:hover:not(:disabled) {
-  background: #87591a;
+  background: var(--accent-strong);
 }
 
 button.ghost {
@@ -81,10 +114,40 @@ select {
   outline-offset: 2px;
 }
 
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--muted) 60%, transparent);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 .muted {
   color: var(--muted);
 }
 
 .error {
   color: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
