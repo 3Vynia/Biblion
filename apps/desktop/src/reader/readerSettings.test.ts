@@ -17,6 +17,12 @@ describe('normalizeSettings', () => {
     expect(s.spread).toBe('single')
   })
 
+  it('keeps comic preferences', () => {
+    const s = normalizeSettings({ comicMode: 'strip', comicFit: 'width', comicSpread: 'single', comicDirection: 'rtl' })
+    expect(s).toMatchObject({ comicMode: 'strip', comicFit: 'width', comicSpread: 'single', comicDirection: 'rtl' })
+    expect(normalizeSettings({ comicDirection: 'up' }).comicDirection).toBe('ltr')
+  })
+
   it('rounds the line height to one decimal', () => {
     expect(normalizeSettings({ lineHeight: 1.5000000001 }).lineHeight).toBe(1.5)
     expect(normalizeSettings({ fontSize: Number.NaN }).fontSize).toBe(100)
