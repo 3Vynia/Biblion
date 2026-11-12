@@ -151,6 +151,10 @@ impl Library {
         self.read(|c| health::problems(c, kind, offset, limit))
     }
 
+    pub fn problem_ids(&self, kind: ProblemKind) -> Result<Vec<BookId>> {
+        self.read(|c| health::problem_ids(c, kind))
+    }
+
     /// Removes books from the library (records, progress, notes). Their files
     /// are left alone.
     pub fn remove_books(&self, ids: &[BookId]) -> Result<usize> {
