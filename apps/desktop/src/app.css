@@ -179,3 +179,77 @@ html.no-motion *::after {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Range sliders: drawn by hand, since WebKitGTK ignores accent-color. */
+input[type='range'] {
+  --range-accent: var(--r-link, var(--accent));
+  --range-track: var(--r-border, var(--border));
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--range-accent) var(--fill, 50%), var(--range-track) var(--fill, 50%));
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: none;
+  border-radius: 50%;
+  background: var(--range-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--range-accent) 22%, transparent), 0 1px 3px rgb(0 0 0 / 0.3);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type='range']:hover::-webkit-slider-thumb,
+input[type='range']:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--range-accent) 28%, transparent), 0 1px 3px rgb(0 0 0 / 0.3);
+}
+
+input[type='range']:focus-visible {
+  outline: none;
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--range-track);
+}
+
+input[type='range']::-moz-range-progress {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--range-accent);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--range-accent);
+}
+
+input[type='range'][dir='rtl']::-webkit-slider-runnable-track {
+  background: linear-gradient(to left, var(--range-accent) var(--fill, 50%), var(--range-track) var(--fill, 50%));
+}

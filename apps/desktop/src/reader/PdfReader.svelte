@@ -19,6 +19,7 @@
   import { readerSettings } from './settingsStore.svelte'
   import AmbiencePanel from '../components/AmbiencePanel.svelte'
   import { ambience } from '../lib/ambience/store.svelte'
+  import { rangeFill } from '../lib/rangeFill'
 
   interface Props {
     book: Book
@@ -585,6 +586,7 @@
       min="0"
       max={Math.max(0, count - 1)}
       value={current}
+      use:rangeFill={[current, count]}
       onchange={(e) => goToPage(Number(e.currentTarget.value))}
       disabled={status !== 'ready'}
       aria-label="Position in document"
@@ -972,7 +974,6 @@
 
   footer input[type='range'] {
     flex: 1;
-    accent-color: var(--r-link);
   }
 
   .meta {

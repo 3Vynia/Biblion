@@ -12,6 +12,7 @@
   import { readerSettings } from './settingsStore.svelte'
   import AmbiencePanel from '../components/AmbiencePanel.svelte'
   import { ambience } from '../lib/ambience/store.svelte'
+  import { rangeFill } from '../lib/rangeFill'
 
   interface Props {
     book: Book
@@ -362,6 +363,7 @@
       max={Math.max(0, count - 1)}
       step="1"
       value={sliderValue ?? page}
+      use:rangeFill={[sliderValue ?? page, count, rtl]}
       dir={rtl ? 'rtl' : 'ltr'}
       oninput={(e) => (sliderValue = Number(e.currentTarget.value))}
       onchange={commitSlider}
@@ -664,6 +666,5 @@
 
   input[type='range'] {
     flex: 1;
-    accent-color: var(--r-link);
   }
 </style>

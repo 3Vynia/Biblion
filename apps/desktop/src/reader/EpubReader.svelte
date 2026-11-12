@@ -22,6 +22,7 @@
   import TocPanel, { type TocItem } from './TocPanel.svelte'
   import SearchPanel from './SearchPanel.svelte'
   import SettingsPanel from './SettingsPanel.svelte'
+  import { rangeFill } from '../lib/rangeFill'
 
   interface Props {
     book: Book
@@ -607,6 +608,7 @@
       max="1000"
       step="1"
       value={sliderValue ?? Math.round(fraction * 1000)}
+      use:rangeFill={sliderValue ?? Math.round(fraction * 1000)}
       oninput={(e) => (sliderValue = Number(e.currentTarget.value))}
       onchange={commitSlider}
       disabled={status !== 'ready'}
@@ -875,7 +877,6 @@
 
   input[type='range'] {
     flex: 1;
-    accent-color: var(--r-link);
   }
 
   button:not(.icon) {
