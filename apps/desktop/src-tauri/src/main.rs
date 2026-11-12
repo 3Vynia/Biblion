@@ -87,6 +87,7 @@ fn main() {
             commands::remove_from_shelf,
             commands::book_shelves,
             commands::set_progress,
+            commands::comic_pages,
             commands::books_without_cover,
             commands::set_cover,
             commands::list_dictionaries,
