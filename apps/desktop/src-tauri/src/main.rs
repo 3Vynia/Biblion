@@ -16,14 +16,15 @@ use settings::Settings;
 /// Registers an async URI scheme whose handler reads from disk on the
 /// blocking pool, so serving covers never stalls the web view.
 fn file_scheme<R: Runtime>(
-    handler: fn(&Library, &str) -> tauri::http::Response<Vec<u8>>,
+    handler: fn(&Library, &str, Option<&str>) -> tauri::http::Response<Vec<u8>>,
 ) -> impl Fn(UriSchemeContext<'_, R>, tauri::http::Request<Vec<u8>>, UriSchemeResponder) + Send + Sync + 'static {
     move |ctx, request, responder| {
         let lib = ctx.app_handle().try_state::<AppState>().map(|s| s.lib.clone());
         let path = request.uri().path().to_owned();
+        let range = request.headers().get(tauri::http::header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_owned);
         tauri::async_runtime::spawn_blocking(move || {
             let response = match lib {
-                Some(lib) => handler(&lib, &path),
+                Some(lib) => handler(&lib, &path, range.as_deref()),
                 None => tauri::http::Response::builder().status(503).body(b"library not ready".to_vec()).unwrap(),
             };
             responder.respond(response);
@@ -43,6 +44,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("thumb", file_scheme(protocols::thumbnail))
         .register_asynchronous_uri_scheme_protocol("book", file_scheme(protocols::book_file))
+        .register_asynchronous_uri_scheme_protocol("comic", file_scheme(protocols::comic_page))
         .setup(|app| {
             // BIBLION_DATA_DIR lets development and testing use a separate library.
             let data_dir = match std::env::var_os("BIBLION_DATA_DIR") {
@@ -85,6 +87,8 @@ fn main() {
             commands::remove_from_shelf,
             commands::book_shelves,
             commands::set_progress,
+            commands::books_without_cover,
+            commands::set_cover,
             commands::list_dictionaries,
             commands::define,
             commands::install_dictionary,
