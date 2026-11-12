@@ -120,6 +120,17 @@ pub fn problems(c: &Connection, kind: ProblemKind, offset: u32, limit: u32) -> R
     Ok(Page { items, total: total as u64, offset })
 }
 
+/// Every book with this problem (for actions on all of them).
+pub fn problem_ids(c: &Connection, kind: ProblemKind) -> Result<Vec<BookId>> {
+    let filter = match kind {
+        ProblemKind::Unreadable => "scan_error IS NOT NULL AND missing = 0",
+        ProblemKind::Missing => "missing = 1",
+    };
+    let mut stmt = c.prepare(&format!("SELECT id FROM books WHERE {filter}"))?;
+    let ids = stmt.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(ids)
+}
+
 /// Candidate groups: books sharing a fingerprint, or a title and author.
 fn candidates(c: &Connection, kind: DuplicateKind) -> Result<Vec<Vec<HealthBook>>> {
     let key = match kind {

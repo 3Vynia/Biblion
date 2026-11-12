@@ -106,6 +106,7 @@ fn main() {
             commands::forget_books,
             commands::trash_books,
             commands::reread_books,
+            commands::forget_missing,
             commands::list_dictionaries,
             commands::define,
             commands::install_dictionary,

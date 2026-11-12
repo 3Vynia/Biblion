@@ -498,11 +498,23 @@ pub async fn trash_books(state: State<'_, AppState>, ids: Vec<BookId>) -> CmdRes
     .await
 }
 
-/// Reads these books' files again (after a download finished, say).
+/// Forgets every book whose file is gone.
 #[tauri::command]
-pub async fn reread_books(state: State<'_, AppState>, ids: Vec<BookId>) -> CmdResult<ScanReport> {
+pub async fn forget_missing(state: State<'_, AppState>) -> CmdResult<usize> {
+    let lib = state.lib.clone();
+    blocking(move || lib.remove_books(&lib.problem_ids(ProblemKind::Missing)?)).await
+}
+
+/// Reads these books' files again (after a download finished, say). With
+/// no ids, every book that could not be read.
+#[tauri::command]
+pub async fn reread_books(state: State<'_, AppState>, ids: Option<Vec<BookId>>) -> CmdResult<ScanReport> {
     let lib = state.lib.clone();
     blocking(move || {
+        let ids = match ids {
+            Some(ids) => ids,
+            None => lib.problem_ids(ProblemKind::Unreadable)?,
+        };
         let roots = ids.iter().map(|&id| lib.get_book(id).map(|b| PathBuf::from(b.path))).collect::<biblion_core::Result<Vec<_>>>()?;
         lib.scan(&ScanOptions { roots, force: true, light: true, threads: None }, &|_| {})
     })
