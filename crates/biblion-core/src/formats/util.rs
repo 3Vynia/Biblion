@@ -207,11 +207,79 @@ fn split_authors(s: &str) -> Vec<String> {
         .collect()
 }
 
+/// Fills in title/author from the path when missing: first the file name,
+/// then the folder it sits in (`Author Name/Title.epub`).
+pub fn fill_from_path(m: &mut Metadata, path: &Path) {
+    fill_from_filename(m, path);
+    if m.authors.is_empty() {
+        if let Some(a) = author_from_folder(path) {
+            m.authors.push(a);
+        }
+    }
+}
+
+/// Words that may start in lower case inside a person's name.
+const NAME_PARTICLES: &[&str] = &[
+    "de", "del", "la", "las", "los", "y", "e", "i", "van", "von", "der", "den", "da", "di", "do", "du", "le", "dos", "das", "al", "bin",
+    "ibn", "ben", "zu", "ter",
+];
+
+/// Words of folder names that sort books by kind rather than by author
+/// ("Ciencia Ficción", "Historical Fiction", "Varios Autores"…).
+const NOT_NAMES: &[&str] = &[
+    "adult", "adults", "adventure", "adventures", "art", "arte", "author", "authors", "autor", "autores", "aventura", "aventuras",
+    "biblioteca", "bibliotecas", "biografia", "biografias", "biography", "book", "books", "calibre", "children", "ciencia", "ciencias",
+    "classics", "clasicos", "cocina", "coleccion", "colecciones", "collection", "collections", "comic", "comics", "cooking", "crime",
+    "cuentos", "descargas", "desconocido", "documents", "downloads", "drama", "ebook", "ebooks", "economia", "economics", "ensayo",
+    "ensayos", "erotica", "fantasia", "fantasy", "fiction", "ficcion", "filosofia", "general", "historia", "historias", "historical",
+    "history", "horror", "humor", "infantil", "juvenil", "leidos", "libro", "libros", "library", "literatura", "literature", "magazines",
+    "manga", "manuales", "misterio", "mystery", "new", "nonfiction", "novela", "novelas", "novels", "otros", "pendientes", "philosophy",
+    "poesia", "poetry", "policiaca", "politica", "politics", "psicologia", "psychology", "read", "relatos", "religion", "revistas",
+    "romance", "romantica", "saga", "sagas", "science", "series", "short", "stories", "teatro", "terror", "thriller", "thrillers",
+    "travel", "unknown", "unread", "various", "varios", "viajes", "western", "young",
+];
+
+/// Whether `s` reads like a person's name: two to six words, no digits,
+/// every word capitalised except particles such as "de" or "von", and
+/// none of them a genre or category word.
+pub fn looks_like_name(s: &str) -> bool {
+    let words: Vec<&str> = s.split_whitespace().collect();
+    if !(2..=6).contains(&words.len()) || s.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+    if words.iter().any(|w| NOT_NAMES.contains(&fold_diacritics(&w.to_lowercase()).as_str())) {
+        return false;
+    }
+    let capital = |w: &str| w.chars().next().is_some_and(char::is_uppercase);
+    capital(words[0])
+        && capital(words[words.len() - 1])
+        && words.iter().all(|w| {
+            (capital(w) || NAME_PARTICLES.contains(&w.to_lowercase().as_str()))
+                && w.chars().all(|c| c.is_alphabetic() || matches!(c, '.' | '\'' | '’' | '-'))
+        })
+}
+
+/// The author named by the folder a book is in, when that folder looks like
+/// a person's name. Calibre's `Author/Title (12)/file` layout is understood.
+pub fn author_from_folder(path: &Path) -> Option<String> {
+    let mut dirs = path.ancestors().skip(1).filter_map(|d| d.file_name()?.to_str());
+    let mut dir = dirs.next()?;
+    let calibre = dir.strip_suffix(')').and_then(|d| d.rsplit_once(" (")).is_some_and(|(_, n)| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+    if calibre {
+        dir = dirs.next()?;
+    }
+    if dir.starts_with(['_', '.']) {
+        return None;
+    }
+    let name = collapse_ws(&dir.replace('_', " "));
+    looks_like_name(&name).then_some(name)
+}
+
 /// Fills in title/author from the file name when missing.
-/// Recognises "Author - Title" and "Title (Author)".
+/// Recognises "Author - Title", "Title (Author)" and "Title-Author_Name".
 pub fn fill_from_filename(m: &mut Metadata, path: &Path) {
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("").replace('_', " ");
-    let stem = collapse_ws(&stem);
+    let raw = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    let stem = collapse_ws(&raw.replace('_', " "));
     let has_title = m.title.as_deref().is_some_and(|t| !t.trim().is_empty());
     if has_title && !m.authors.is_empty() {
         return;
@@ -220,6 +288,9 @@ pub fn fill_from_filename(m: &mut Metadata, path: &Path) {
         (Some(a.trim().to_owned()), t.trim().to_owned())
     } else if let (Some(open), true) = (stem.rfind('('), stem.ends_with(')')) {
         (Some(stem[open + 1..stem.len() - 1].trim().to_owned()), stem[..open].trim().to_owned())
+    } else if let Some((t, a)) = stem.rsplit_once('-').filter(|(t, a)| raw.contains('_') && !t.trim().is_empty() && looks_like_name(a)) {
+        // "Habla_el_General-Agustin_Blanco_Munoz": words joined by "_", author after the last "-".
+        (Some(a.trim().to_owned()), t.trim().to_owned())
     } else {
         (None, stem.clone())
     };
@@ -327,6 +398,31 @@ mod tests {
         fill_from_filename(&mut m, Path::new("/x/Isaac Asimov - Fundación.epub"));
         assert_eq!(m.title.as_deref(), Some("Fundación"));
         assert_eq!(m.authors, vec!["Isaac Asimov"]);
+    }
+
+    #[test]
+    fn author_from_the_path() {
+        let parse = |p: &str| {
+            let mut m = Metadata::default();
+            fill_from_path(&mut m, Path::new(p));
+            (m.title.unwrap_or_default(), m.authors.join("; "))
+        };
+        assert_eq!(parse("/b/Frank_Caudett/002_contra_Andromeda.epub"), ("002 contra Andromeda".into(), "Frank Caudett".into()));
+        assert_eq!(parse("/b/Marta_Rivera_de_la_Cruz/Que_veinte.epub").1, "Marta Rivera de la Cruz");
+        assert_eq!(parse("/b/Jordi_Sierra_i_Fabra/Algunos_dias.epub").1, "Jordi Sierra i Fabra");
+        assert_eq!(parse("/b/_Otros/Habla_el_General-Agustin_Blanco_Munoz.epub"), ("Habla el General".into(), "Agustin Blanco Munoz".into()));
+        assert_eq!(parse("/b/_Otros/Heroes_de_Tarsi-A_J_Ogayas.epub").1, "A J Ogayas");
+        assert_eq!(parse("/c/Ursula K. Le Guin/A Wizard of Earthsea (42)/book.epub").1, "Ursula K. Le Guin");
+        // Folders and hyphens that are not names are left alone.
+        assert_eq!(parse("/b/_Otros/Sin_autor.epub").1, "");
+        assert_eq!(parse("/b/Science Fiction 2024/x.epub").1, "");
+        assert_eq!(parse("/b/epub/x.epub").1, "");
+        assert_eq!(parse("/b/Varios_autores/x.epub").1, "");
+        assert_eq!(parse("/b/Ciencia_Ficción/x.epub").1, "");
+        assert_eq!(parse("/b/Historical Fiction/x.epub").1, "");
+        assert_eq!(parse("/b/Varios Autores/x.epub").1, "");
+        assert_eq!(parse("/b/Comics/The_Amazing_Spider-Man.cbz"), ("The Amazing Spider-Man".into(), "".into()));
+        assert_eq!(parse("/b/Novelas/Spider-Man Returns.epub").1, "");
     }
 
     #[test]

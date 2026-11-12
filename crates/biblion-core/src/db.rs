@@ -158,7 +158,43 @@ CREATE INDEX bookmarks_recent ON bookmarks(created_at DESC, id DESC);
 /// v4: no schema change; title sort keys are recomputed (see `migrate`).
 const SCHEMA_V4: &str = "";
 
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4];
+/// v5: no schema change; books without authors get one from their path
+/// when it names one (see `infer_missing_authors`).
+const SCHEMA_V5: &str = "";
+
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5];
+
+/// Gives authorless books the author named by their folder or file name.
+/// Books edited by hand are left alone; a book whose file could not be
+/// read also gets its title re-read from the file name.
+fn infer_missing_authors(tx: &Transaction) -> Result<usize> {
+    let rows: Vec<(BookId, String, String, bool)> = {
+        let mut stmt = tx.prepare(
+            "SELECT id, path, title, scan_error IS NOT NULL FROM books b
+             WHERE user_edited = 0 AND NOT EXISTS (SELECT 1 FROM book_authors ba WHERE ba.book_id = b.id)",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<std::result::Result<_, _>>()?;
+        rows
+    };
+    let mut ins_author = tx.prepare("INSERT INTO authors(name, sort_name) VALUES (?1, ?2) ON CONFLICT(name) DO NOTHING")?;
+    let mut get_author = tx.prepare("SELECT id FROM authors WHERE name = ?1")?;
+    let mut link = tx.prepare("INSERT OR IGNORE INTO book_authors(book_id, author_id, position) VALUES (?1, ?2, 0)")?;
+    let mut update = tx.prepare("UPDATE books SET title = ?2, sort_title = ?3, authors = ?4, author_sort = ?5 WHERE id = ?1")?;
+    let mut fts = tx.prepare("UPDATE books_fts SET title = ?2, authors = ?3 WHERE rowid = ?1")?;
+    let mut changed = 0;
+    for (id, path, title, unreadable) in rows {
+        let mut m = Metadata { title: (!unreadable).then_some(title), ..Default::default() };
+        crate::formats::util::fill_from_path(&mut m, std::path::Path::new(&path));
+        let (Some(author), Some(title)) = (m.authors.into_iter().next(), m.title) else { continue };
+        ins_author.execute(params![author, author_sort_key(&author)])?;
+        let aid: i64 = get_author.query_row([&author], |r| r.get(0))?;
+        link.execute(params![id, aid])?;
+        update.execute(params![id, title, sort_key(&title), author, author_sort_key(&author)])?;
+        fts.execute(params![id, title, author])?;
+        changed += 1;
+    }
+    Ok(changed)
+}
 
 /// Recomputes every title sort key, after the key format changed.
 fn recompute_sort_titles(tx: &Transaction) -> Result<()> {
@@ -219,6 +255,10 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
         tx.execute_batch(sql)?;
         if i + 1 == 4 {
             recompute_sort_titles(&tx)?;
+        }
+        if i + 1 == 5 {
+            let n = infer_missing_authors(&tx)?;
+            tracing::info!("authors taken from file paths: {n}");
         }
         tx.pragma_update(None, "user_version", (i + 1) as i64)?;
         tx.commit()?;
