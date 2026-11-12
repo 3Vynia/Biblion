@@ -25,6 +25,7 @@ export type Route =
   | { name: 'notes' }
   | { name: 'collections' }
   | { name: 'formats' }
+  | { name: 'health' }
   | { name: 'settings' }
 
 export type BooksRoute = Extract<Route, { name: 'books' }>
@@ -43,6 +44,7 @@ export type Section =
   | 'notes'
   | 'collections'
   | 'formats'
+  | 'health'
   | 'settings'
 
 export function sectionOf(route: Route): Section {

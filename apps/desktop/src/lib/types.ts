@@ -196,3 +196,42 @@ export interface Definition {
   /** Body is HTML-like markup; it is always shown as plain text. */
   markup: boolean
 }
+
+// ── Library health (crates/biblion-core/src/health.rs) ──
+
+export type DuplicateKind = 'identical' | 'same_book'
+export type ProblemKind = 'unreadable' | 'missing'
+
+export interface HealthBook {
+  id: BookId
+  title: string
+  authors: string[]
+  format: Format
+  cover_key: string | null
+  path: string
+  size: number
+  added_at: number
+  progress: number | null
+  annotations: number
+  favorite: boolean
+  error: string | null
+  missing: boolean
+}
+
+export interface DuplicateGroup {
+  kind: DuplicateKind
+  books: HealthBook[]
+  /** Bytes freed by keeping one file. */
+  wasted: number
+}
+
+export interface HealthCounts {
+  unreadable: number
+  missing: number
+}
+
+export interface TrashReport {
+  removed: number
+  /** [path, reason] */
+  failed: [string, string][]
+}
