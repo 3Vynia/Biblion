@@ -68,20 +68,37 @@
   })
 
   // The backend rescans watched folders on its own; show what it found.
+  // While a download keeps adding books, they are counted up and announced
+  // at most once a minute.
+  const NOTICE_GAP_MS = 60_000
   let notice = $state<string | null>(null)
   let noticeTimer: ReturnType<typeof setTimeout> | undefined
+  let pendingAdded = 0
+  let lastNotice = 0
+  let flushTimer: ReturnType<typeof setTimeout> | undefined
+  function announce() {
+    flushTimer = undefined
+    if (pendingAdded === 0) return
+    notice = `${formatCount(pendingAdded)} new ${pendingAdded === 1 ? 'book' : 'books'} in your library`
+    pendingAdded = 0
+    lastNotice = Date.now()
+    clearTimeout(noticeTimer)
+    noticeTimer = setTimeout(() => (notice = null), 5000)
+  }
   onMount(() => {
     const unlisten = api.onLibraryChanged((report) => {
       library.changed()
       if (report.added === 0) return
       pdfCovers.run()
-      notice = `${formatCount(report.added)} new ${report.added === 1 ? 'book' : 'books'} in your library`
-      clearTimeout(noticeTimer)
-      noticeTimer = setTimeout(() => (notice = null), 5000)
+      pendingAdded += report.added
+      const wait = lastNotice + NOTICE_GAP_MS - Date.now()
+      if (wait <= 0) announce()
+      else flushTimer ??= setTimeout(announce, wait)
     })
     return () => {
       unlisten.then((f) => f())
       clearTimeout(noticeTimer)
+      clearTimeout(flushTimer)
     }
   })
 

@@ -88,3 +88,26 @@ test('folder watching can be turned off, and changes found by it show up', async
   await page.getByRole('button', { name: 'Dismiss' }).click()
   await expect(page.getByRole('status')).toHaveCount(0)
 })
+
+test('books added in quick succession are announced together', async ({ page }) => {
+  const emit = (added: number) =>
+    page.evaluate(
+      (n) =>
+        (window as unknown as { __emit: (e: string, p: unknown) => Promise<void> }).__emit('library-changed', {
+          found: n, unchanged: 0, added: n, updated: 0, missing: 0, errors: 0, covers: 0, elapsed_ms: 5, error_samples: [],
+        }),
+      added,
+    )
+  await page.clock.install()
+  await page.goto('/dev/mock.html')
+  await expect(page.getByRole('button', { name: /All books/ })).toBeVisible()
+  await page.waitForTimeout(300) // let the app subscribe
+  const status = page.getByRole('status')
+  await emit(2)
+  await expect(status).toHaveText('2 new books in your library', { useInnerText: true })
+  await emit(5)
+  await emit(1)
+  await expect(status).toHaveText('2 new books in your library', { useInnerText: true })
+  await page.clock.runFor(61_000)
+  await expect(status).toHaveText('6 new books in your library', { useInnerText: true })
+})
