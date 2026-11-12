@@ -9,6 +9,7 @@
   import { palette } from '../lib/ambience/palette'
   import { LAYERS, MODES, type LayerId, type Mode, type Scene } from '../lib/ambience/settings'
   import { rise } from '../lib/motion'
+  import { rangeFill } from '../lib/rangeFill'
 
   interface Props {
     /** Smaller layout for the reader's side panel. */
@@ -60,7 +61,7 @@
       <strong>{active?.name ?? (s.soundscape.on ? `${MODES.find((m) => m.id === s.soundscape.mode)?.label} soundscape` : 'Your mix')}</strong>
       <label class="slider">
         <Icon name="sound" size={15} />
-        <input type="range" min="0" max="1" step="0.01" value={s.master} oninput={(e) => ambience.setMaster(Number(e.currentTarget.value))} aria-label="Master volume" />
+        <input type="range" min="0" max="1" step="0.01" value={s.master} use:rangeFill={s.master} oninput={(e) => ambience.setMaster(Number(e.currentTarget.value))} aria-label="Master volume" />
         <span>{pct(s.master)}</span>
       </label>
       {#if ambience.timerEnds}
@@ -95,16 +96,16 @@
       <div class="controls" in:rise={{ y: 4, duration: 200 }}>
         <label class="slider labeled">
           <span class="name">Volume</span>
-          <input type="range" min="0" max="1" step="0.01" value={s.soundscape.volume} oninput={(e) => ambience.setSoundscape({ volume: Number(e.currentTarget.value) })} />
+          <input type="range" min="0" max="1" step="0.01" value={s.soundscape.volume} use:rangeFill={s.soundscape.volume} oninput={(e) => ambience.setSoundscape({ volume: Number(e.currentTarget.value) })} />
         </label>
         <label class="slider labeled">
           <span class="name">Energy</span>
-          <input type="range" min="0" max="1" step="0.01" value={s.soundscape.energy} oninput={(e) => ambience.setSoundscape({ energy: Number(e.currentTarget.value) })} />
+          <input type="range" min="0" max="1" step="0.01" value={s.soundscape.energy} use:rangeFill={s.soundscape.energy} oninput={(e) => ambience.setSoundscape({ energy: Number(e.currentTarget.value) })} />
           <span class="ends"><span>Sparse</span><span>Lively</span></span>
         </label>
         <label class="slider labeled">
           <span class="name">Warmth</span>
-          <input type="range" min="0" max="1" step="0.01" value={s.soundscape.warmth} oninput={(e) => ambience.setSoundscape({ warmth: Number(e.currentTarget.value) })} />
+          <input type="range" min="0" max="1" step="0.01" value={s.soundscape.warmth} use:rangeFill={s.soundscape.warmth} oninput={(e) => ambience.setSoundscape({ warmth: Number(e.currentTarget.value) })} />
           <span class="ends"><span>Dark</span><span>Bright</span></span>
         </label>
         <Switch
@@ -164,11 +165,11 @@
             <div class="layer-controls" in:rise={{ y: 4, duration: 180 }}>
               <label class="slider">
                 <span class="mini">Vol</span>
-                <input type="range" min="0" max="1" step="0.01" value={st.volume} oninput={(e) => ambience.setLayer(layer.id, { volume: Number(e.currentTarget.value) })} aria-label="{layer.label} volume" />
+                <input type="range" min="0" max="1" step="0.01" value={st.volume} use:rangeFill={st.volume} oninput={(e) => ambience.setLayer(layer.id, { volume: Number(e.currentTarget.value) })} aria-label="{layer.label} volume" />
               </label>
               {#if layer.tone}
                 <label class="slider labeled">
-                  <input type="range" min="0" max="1" step="0.01" value={st.tone} oninput={(e) => ambience.setLayer(layer.id, { tone: Number(e.currentTarget.value) })} aria-label="{layer.label} character" />
+                  <input type="range" min="0" max="1" step="0.01" value={st.tone} use:rangeFill={st.tone} oninput={(e) => ambience.setLayer(layer.id, { tone: Number(e.currentTarget.value) })} aria-label="{layer.label} character" />
                   <span class="ends"><span>{layer.tone[0]}</span><span>{layer.tone[1]}</span></span>
                 </label>
               {/if}
@@ -195,7 +196,7 @@
     {#if s.pageTurn}
       <label class="slider labeled">
         <span class="name">Page sound volume</span>
-        <input type="range" min="0" max="1" step="0.01" value={s.pageTurnVolume} oninput={(e) => ambience.setOptions({ pageTurnVolume: Number(e.currentTarget.value) })} />
+        <input type="range" min="0" max="1" step="0.01" value={s.pageTurnVolume} use:rangeFill={s.pageTurnVolume} oninput={(e) => ambience.setOptions({ pageTurnVolume: Number(e.currentTarget.value) })} />
       </label>
     {/if}
   </section>
@@ -381,7 +382,8 @@
   .slider input {
     flex: 1;
     min-width: 0;
-    accent-color: var(--a-accent);
+    --range-accent: var(--a-accent);
+    --range-track: var(--a-border);
   }
 
   .slider.labeled {
