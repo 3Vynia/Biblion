@@ -9,6 +9,7 @@ use rusqlite::Connection;
 
 use crate::covers::CoverCache;
 use crate::dictionary::{self, Definition, Dictionary, DictionaryInfo};
+use crate::health::{self, DuplicateGroup, DuplicateKind, HashCache, HealthBook, HealthCounts, ProblemKind};
 use crate::scanner::{self, ScanEvent, ScanOptions, ScanReport};
 use crate::{
     db, formats, Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, NewAnnotation, Book, BookId, BookStats, BookQuery, BookSummary, Error, Format, LibraryStats, Metadata, Page, Result,
@@ -33,6 +34,8 @@ pub struct Library {
     cancel: AtomicBool,
     /// Offline dictionaries, loaded on the first lookup.
     dictionaries: Mutex<Option<std::sync::Arc<Vec<Dictionary>>>>,
+    /// Full-content hashes for duplicate checks, by (path, size, mtime).
+    hashes: HashCache,
 }
 
 impl Library {
@@ -54,6 +57,7 @@ impl Library {
             scanning: AtomicBool::new(false),
             cancel: AtomicBool::new(false),
             dictionaries: Mutex::new(None),
+            hashes: HashCache::default(),
         })
     }
 
@@ -130,19 +134,27 @@ impl Library {
         self.read(db::stats)
     }
 
-    /// Groups of identical files (same fingerprint).
-    pub fn duplicates(&self, limit: u32) -> Result<Vec<Vec<BookId>>> {
-        self.read(|c| {
-            let mut stmt = c.prepare(
-                "SELECT group_concat(id) FROM books WHERE missing = 0 GROUP BY fingerprint HAVING COUNT(*) > 1 LIMIT ?1",
-            )?;
-            let rows = stmt.query_map([limit], |r| r.get::<_, String>(0))?;
-            let mut out = Vec::new();
-            for r in rows {
-                out.push(r?.split(',').filter_map(|s| s.parse().ok()).collect());
-            }
-            Ok(out)
-        })
+    // ── Library health ───────────────────────────────────────────────
+
+    /// Duplicate books. Identical files are confirmed by hashing them whole,
+    /// so the first call can take a moment on a large library.
+    pub fn duplicates(&self, kind: DuplicateKind) -> Result<Vec<DuplicateGroup>> {
+        self.read(|c| health::duplicates(c, kind, &self.hashes))
+    }
+
+    pub fn health_counts(&self) -> Result<HealthCounts> {
+        self.read(health::counts)
+    }
+
+    /// Books whose file could not be read, or is gone.
+    pub fn problem_books(&self, kind: ProblemKind, offset: u32, limit: u32) -> Result<Page<HealthBook>> {
+        self.read(|c| health::problems(c, kind, offset, limit))
+    }
+
+    /// Removes books from the library (records, progress, notes). Their files
+    /// are left alone.
+    pub fn remove_books(&self, ids: &[BookId]) -> Result<usize> {
+        self.user_write(|c| health::remove(c, ids))
     }
 
     // ── Reading and user state ──────────────────────────────────────

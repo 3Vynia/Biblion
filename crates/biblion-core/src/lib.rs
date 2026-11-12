@@ -8,6 +8,7 @@ pub mod db;
 pub mod dictionary;
 pub mod error;
 pub mod formats;
+pub mod health;
 pub mod library;
 pub mod model;
 pub mod scanner;

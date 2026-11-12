@@ -462,11 +462,11 @@ pub fn update_metadata(conn: &mut Connection, id: BookId, m: &Metadata) -> Resul
 
 // ───────────────────────────── Reads (UI) ─────────────────────────────
 
-fn split_list(s: String) -> Vec<String> {
+pub(crate) fn split_list(s: String) -> Vec<String> {
     if s.is_empty() { Vec::new() } else { s.split(SEP).map(str::to_owned).collect() }
 }
 
-fn parse_format(s: String) -> Format {
+pub(crate) fn parse_format(s: String) -> Format {
     Format::parse(&s).unwrap_or(Format::Epub)
 }
 
