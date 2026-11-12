@@ -15,6 +15,8 @@
   import { formatCount } from '../lib/format'
   import { scan } from '../lib/scan.svelte'
   import { ui } from '../lib/uiSettings.svelte'
+  import { ambience } from '../lib/ambience/store.svelte'
+  import { MODES } from '../lib/ambience/settings'
 
   interface Item {
     section: Section
@@ -156,6 +158,22 @@
   </nav>
 
   <div class="footer">
+    {#if ambience.playing}
+      <div class="player" class:collapsed>
+        <button class="item now-playing" onclick={() => nav.jump({ name: 'settings' })} title="Ambience settings">
+          <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
+          {#if !collapsed}
+            <span class="label">
+              {ambience.active?.name ??
+                (ambience.value.soundscape.on ? MODES.find((m) => m.id === ambience.value.soundscape.mode)?.label : 'Ambience')}
+            </span>
+          {/if}
+        </button>
+        {#if !collapsed}
+          <button class="pause" onclick={() => ambience.pause()} aria-label="Pause ambience" title="Pause"><Icon name="pause" size={14} filled /></button>
+        {/if}
+      </div>
+    {/if}
     {#if scan.running}
       <button class="item scanning" onclick={() => nav.jump({ name: 'settings' })} title={scanLabel}>
         <span class="spinner" aria-hidden="true"></span>
@@ -360,6 +378,70 @@
     padding-top: 10px;
     margin-top: 10px;
     border-top: 1px solid var(--border);
+  }
+
+  .player {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .now-playing {
+    color: var(--accent);
+    font-size: 13px;
+  }
+
+  .pause {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .pause:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--text) 7%, transparent);
+    color: var(--text);
+  }
+
+  /* Three bars dancing slowly: the ambience is on. */
+  .bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    width: 16px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+
+  .bars i {
+    flex: 1;
+    border-radius: 1px;
+    background: currentColor;
+    animation: bar 1.6s ease-in-out infinite;
+  }
+
+  .bars i:nth-child(2) {
+    animation-delay: -0.5s;
+  }
+
+  .bars i:nth-child(3) {
+    animation-delay: -1s;
+  }
+
+  @keyframes bar {
+    0%,
+    100% {
+      height: 30%;
+    }
+    50% {
+      height: 100%;
+    }
   }
 
   .scanning {
