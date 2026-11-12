@@ -13,6 +13,7 @@
   import AmbiencePanel from '../components/AmbiencePanel.svelte'
   import { ambience } from '../lib/ambience/store.svelte'
   import { rangeFill } from '../lib/rangeFill'
+  import { readingLog, trackReading } from '../lib/readingLog'
 
   interface Props {
     book: Book
@@ -65,7 +66,10 @@
   $effect(() => {
     void page
     if (status !== 'ready') return
-    if (lastPage >= 0 && page !== lastPage) ambience.pageTurned()
+    if (lastPage >= 0 && page !== lastPage) {
+      ambience.pageTurned()
+      readingLog.pageTurned()
+    }
     lastPage = page
     dirty = true
     clearTimeout(saveTimer)
@@ -177,6 +181,8 @@
   function pageFailed(p: number) {
     broken = new Set(broken).add(p)
   }
+
+  onMount(() => trackReading(book.id))
 
   onMount(() => {
     window.addEventListener('keydown', onKey)

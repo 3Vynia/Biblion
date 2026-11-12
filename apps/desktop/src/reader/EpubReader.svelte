@@ -23,6 +23,7 @@
   import SearchPanel from './SearchPanel.svelte'
   import SettingsPanel from './SettingsPanel.svelte'
   import { rangeFill } from '../lib/rangeFill'
+  import { readingLog, trackReading } from '../lib/readingLog'
 
   interface Props {
     book: Book
@@ -281,7 +282,10 @@
     page = d.location?.total ? { current: d.location.current + 1, total: d.location.total } : null
     minutesLeft = typeof d.time?.section === 'number' ? d.time.section : null
     // A new page (not the first one shown): the ambience may answer.
-    if (pageCfi && d.cfi && d.cfi !== pageCfi) ambience.pageTurned()
+    if (pageCfi && d.cfi && d.cfi !== pageCfi) {
+      ambience.pageTurned()
+      readingLog.pageTurned()
+    }
     pageCfi = d.cfi ?? null
     pageText = (d.range?.toString?.() ?? '').replace(/\s+/g, ' ').trim().slice(0, 160)
     selection = null
@@ -474,6 +478,8 @@
     }
     status = 'ready'
   }
+
+  onMount(() => trackReading(book.id))
 
   onMount(() => {
     window.addEventListener('keydown', onKey)

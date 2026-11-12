@@ -20,6 +20,7 @@
   import AmbiencePanel from '../components/AmbiencePanel.svelte'
   import { ambience } from '../lib/ambience/store.svelte'
   import { rangeFill } from '../lib/rangeFill'
+  import { readingLog, trackReading } from '../lib/readingLog'
 
   interface Props {
     book: Book
@@ -375,7 +376,10 @@
   $effect(() => {
     void current
     if (untrack(() => status) !== 'ready') return
-    if (lastPage >= 0 && current !== lastPage) ambience.pageTurned()
+    if (lastPage >= 0 && current !== lastPage) {
+      ambience.pageTurned()
+      readingLog.pageTurned()
+    }
     lastPage = current
     dirty = true
     clearTimeout(saveTimer)
@@ -391,6 +395,8 @@
   }
 
   // ── Loading ──────────────────────────────────────────────────────────────
+  onMount(() => trackReading(book.id))
+
   onMount(() => {
     window.addEventListener('keydown', onKey)
     ambience.bookOpened()
