@@ -532,3 +532,49 @@ fn upgrading_recomputes_title_sort_keys() {
         .collect();
     assert_eq!(titles, ["Las (des)ventajas", "Saga 5", "Saga 11"]);
 }
+
+#[test]
+fn authors_come_from_the_path_when_the_book_has_none() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    std::fs::create_dir_all(books.join("Frank_Caudett")).unwrap();
+    std::fs::create_dir_all(books.join("_Otros")).unwrap();
+    // Unreadable files (a half-downloaded book is mostly zeros).
+    std::fs::write(books.join("Frank_Caudett/002_contra_Andromeda.epub"), vec![0u8; 4096]).unwrap();
+    std::fs::write(books.join("_Otros/Habla_el_General-Agustin_Blanco_Munoz.epub"), vec![0u8; 4096]).unwrap();
+    let data = tmp.path().join("data");
+    let by_title = |lib: &Library| {
+        let mut v: Vec<(String, String)> = lib
+            .list_books(&BookQuery { sort: SortBy::Title, limit: 10, ..Default::default() })
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|b| (b.title, b.authors.join("; ")))
+            .collect();
+        v.sort();
+        v
+    };
+    let expected = [
+        ("002 contra Andromeda".to_owned(), "Frank Caudett".to_owned()),
+        ("Habla el General".to_owned(), "Agustin Blanco Munoz".to_owned()),
+    ];
+    {
+        let lib = Library::open(&data).unwrap();
+        scan(&lib, &books);
+        assert_eq!(by_title(&lib), expected);
+    }
+    // A library indexed before this existed gets them when it is upgraded.
+    {
+        let conn = rusqlite::Connection::open(data.join("library.db")).unwrap();
+        conn.execute_batch(
+            "DELETE FROM book_authors; UPDATE books SET authors = '', author_sort = '',
+             title = replace(replace(path, rtrim(path, replace(path, '/', '')), ''), '_', ' ');
+             PRAGMA user_version = 4;",
+        )
+        .unwrap();
+    }
+    let lib = Library::open(&data).unwrap();
+    assert_eq!(by_title(&lib), expected);
+    let found = lib.list_books(&BookQuery { text: Some("caudett".into()), limit: 10, ..Default::default() }).unwrap();
+    assert_eq!(found.items.len(), 1, "the author is searchable");
+}
