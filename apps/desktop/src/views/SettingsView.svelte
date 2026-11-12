@@ -7,6 +7,7 @@
   import Icon, { type IconName } from '../components/Icon.svelte'
   import Switch from '../components/Switch.svelte'
   import SettingsPanel from '../reader/SettingsPanel.svelte'
+  import AmbiencePanel from '../components/AmbiencePanel.svelte'
   import { FONTS, THEMES } from '../reader/readerSettings'
   import { readerSettings } from '../reader/settingsStore.svelte'
   import { api, errorMessage } from '../lib/api'
@@ -27,6 +28,7 @@
     { id: 'appearance', label: 'Appearance', icon: 'sparkle' },
     { id: 'library', label: 'Library', icon: 'folder' },
     { id: 'reading', label: 'Reading', icon: 'reading' },
+    { id: 'ambience', label: 'Ambience', icon: 'sound' },
     { id: 'about', label: 'About', icon: 'info' },
   ]
 
@@ -347,6 +349,18 @@
           checked={ui.value.onlineDictionary}
           onchange={(v) => ui.update({ onlineDictionary: v })}
         />
+      </div>
+    </section>
+
+    <!-- Ambience -->
+    <section id="ambience">
+      <h2>Ambience</h2>
+      <p class="hint">
+        A soundscape made live for reading: it never repeats, follows the time of day and answers your page turns. Mix in
+        rain, a fireplace or the sea, save your own scenes, and let it fade out with the sleep timer.
+      </p>
+      <div class="card ambience-card">
+        <AmbiencePanel />
       </div>
     </section>
 
@@ -770,6 +784,10 @@
     align-items: center;
     gap: 6px;
     white-space: nowrap;
+  }
+
+  .ambience-card {
+    padding: 20px;
   }
 
   .dict-name {
