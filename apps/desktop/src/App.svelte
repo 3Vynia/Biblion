@@ -6,6 +6,7 @@
   import Icon from './components/Icon.svelte'
   import EpubReader from './reader/EpubReader.svelte'
   import ComicReader from './reader/ComicReader.svelte'
+  import PdfReader from './reader/PdfReader.svelte'
   import HomeView from './views/HomeView.svelte'
   import BooksView from './views/BooksView.svelte'
   import AuthorsView from './views/AuthorsView.svelte'
@@ -25,6 +26,7 @@
   import type { Book, BookSummary } from './lib/types'
   import { ui } from './lib/uiSettings.svelte'
   import { dialog } from './lib/dialog.svelte'
+  import { pdfCovers } from './lib/pdfCovers.svelte'
 
   const SEARCH_DEBOUNCE_MS = 180
   const REFRESH_DURING_SCAN_MS = 2500
@@ -54,7 +56,15 @@
     lastRefresh = now
     library.changed()
   }
-  scan.onFinished = () => library.changed()
+  scan.onFinished = () => {
+    library.changed()
+    pdfCovers.run()
+  }
+
+  // Don't render PDF covers while a book is open.
+  $effect(() => {
+    pdfCovers.paused = !!reading
+  })
 
   onMount(async () => {
     try {
@@ -63,6 +73,7 @@
       await library.refresh()
       if (roots.length === 0) showScan = true
       else if (ui.value.scanOnStartup && !(await api.isScanning())) scan.start() // cheap incremental rescan
+      else setTimeout(() => pdfCovers.run(), 3000)
     } catch (e) {
       startupError = errorMessage(e)
     }
@@ -223,6 +234,8 @@
 {#if reading}
   {#if isComic(reading.format)}
     <ComicReader book={reading} startAt={readingAt} onclose={closeReader} />
+  {:else if reading.format === 'pdf'}
+    <PdfReader book={reading} startAt={readingAt} onclose={closeReader} />
   {:else}
     <EpubReader book={reading} startAt={readingAt} onclose={closeReader} />
   {/if}

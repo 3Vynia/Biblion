@@ -12,7 +12,7 @@ export const FORMAT_LABEL: Record<Format, string> = {
 }
 
 /** Formats the built-in reader can open in this version. */
-export const READABLE: ReadonlySet<Format> = new Set(['epub', 'mobi', 'azw3', 'cbz', 'cbr'])
+export const READABLE: ReadonlySet<Format> = new Set(['epub', 'mobi', 'azw3', 'pdf', 'cbz', 'cbr'])
 
 /** Comics open in the comic reader, the rest in the text reader. */
 export const isComic = (f: Format) => f === 'cbz' || f === 'cbr'
