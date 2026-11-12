@@ -134,6 +134,23 @@ pub fn set_ui_settings(state: State<'_, AppState>, value: serde_json::Value) -> 
     .map(|_| ())
 }
 
+#[tauri::command]
+pub fn get_ambience_settings(state: State<'_, AppState>) -> Option<serde_json::Value> {
+    state.settings.lock().unwrap().ambience.clone()
+}
+
+#[tauri::command]
+pub fn set_ambience_settings(state: State<'_, AppState>, value: serde_json::Value) -> CmdResult<()> {
+    if !value.is_object() {
+        return Err(CmdError::new("invalid_argument", "ambience settings must be an object"));
+    }
+    update_settings(&state, |s| {
+        s.ambience = Some(value);
+        Ok(())
+    })
+    .map(|_| ())
+}
+
 /// Where the library lives (shown in Settings).
 #[tauri::command]
 pub fn data_dir(state: State<'_, AppState>) -> PathBuf {

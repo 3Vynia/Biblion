@@ -66,6 +66,8 @@ fn main() {
             commands::set_reader_settings,
             commands::get_ui_settings,
             commands::set_ui_settings,
+            commands::get_ambience_settings,
+            commands::set_ambience_settings,
             commands::data_dir,
             commands::analyze_book,
             commands::scan,
