@@ -234,15 +234,46 @@ pub fn fill_from_filename(m: &mut Metadata, path: &Path) {
 }
 
 /// Sort key: leading articles removed, lowercase, no diacritics.
+/// Width numbers are padded to, so "5" sorts before "11".
+const NUMBER_WIDTH: usize = 10;
+
+/// Key for sorting titles: lowercase, without accents or punctuation, without
+/// a leading article, and with numbers padded so they sort naturally.
 pub fn sort_key(s: &str) -> String {
-    let lower = fold_diacritics(&s.to_lowercase());
-    let trimmed = lower.trim_start_matches(|c: char| !c.is_alphanumeric());
-    for art in ["the ", "a ", "an ", "el ", "la ", "los ", "las ", "un ", "una ", "le ", "les ", "der ", "die ", "das "] {
-        if let Some(rest) = trimmed.strip_prefix(art) {
-            return rest.to_owned();
+    let folded = fold_diacritics(&s.to_lowercase());
+    // Punctuation inside a word disappears: "(des)ventajas" → "desventajas".
+    let words: Vec<String> = folded
+        .split_whitespace()
+        .map(|w| w.chars().filter(|c| c.is_alphanumeric()).collect::<String>())
+        .filter(|w| !w.is_empty())
+        .map(|w| pad_numbers(&w))
+        .collect();
+    const ARTICLES: [&str; 14] = ["the", "a", "an", "el", "la", "los", "las", "un", "una", "le", "les", "der", "die", "das"];
+    // "A & C" keeps its "a": an article is followed by a real word.
+    let skip = usize::from(words.len() > 1 && ARTICLES.contains(&words[0].as_str()) && words[1].chars().count() > 1);
+    words[skip..].join(" ")
+}
+
+fn pad_numbers(word: &str) -> String {
+    let mut out = String::with_capacity(word.len() + NUMBER_WIDTH);
+    let mut digits = String::new();
+    for c in word.chars().chain(std::iter::once(' ')) {
+        if c.is_ascii_digit() {
+            digits.push(c);
+            continue;
+        }
+        if !digits.is_empty() {
+            let trimmed = digits.trim_start_matches('0');
+            let n = if trimmed.is_empty() { "0" } else { trimmed };
+            out.extend(std::iter::repeat_n('0', NUMBER_WIDTH.saturating_sub(n.len())));
+            out.push_str(n);
+            digits.clear();
+        }
+        if c != ' ' {
+            out.push(c);
         }
     }
-    trimmed.to_owned()
+    out
 }
 
 /// "Gabriel García Márquez" → "marquez, gabriel garcia" (simple heuristic).
@@ -301,6 +332,16 @@ mod tests {
     #[test]
     fn sorting_keys() {
         assert_eq!(sort_key("El Señor de los Anillos"), "senor de los anillos");
+        // Punctuation never decides the order.
+        assert_eq!(sort_key("El 'Problema Ruso' al final"), "problema ruso al final");
+        assert_eq!(sort_key("Las (des)ventajas de ser virgen"), "desventajas de ser virgen");
+        assert_eq!(sort_key("¡Hola!"), "hola");
+        // A lone letter after "A" is not an article.
+        assert_eq!(sort_key("A & C Una historia"), "a c una historia");
+        // Numbers sort naturally.
+        assert!(sort_key("Saga #5") < sort_key("Saga #11"));
+        assert!(sort_key("Abyss 10466") < sort_key("Abyss 100313"));
+        assert!(sort_key("002 contra Andromeda") < sort_key("Andromeda"));
         assert_eq!(author_sort_key("Gabriel García Márquez"), "marquez, gabriel garcia");
     }
 }
