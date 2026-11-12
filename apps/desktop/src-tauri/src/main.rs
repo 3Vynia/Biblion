@@ -100,6 +100,8 @@ fn main() {
             commands::comic_pages,
             commands::books_without_cover,
             commands::set_cover,
+            commands::log_reading,
+            commands::reading_stats,
             commands::duplicates,
             commands::health_counts,
             commands::problem_books,

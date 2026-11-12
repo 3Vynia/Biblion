@@ -162,7 +162,23 @@ const SCHEMA_V4: &str = "";
 /// when it names one (see `infer_missing_authors`).
 const SCHEMA_V5: &str = "";
 
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5];
+/// v6: reading time per book and day, and when a book was finished.
+const SCHEMA_V6: &str = r#"
+CREATE TABLE reading_log (
+    book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    day     TEXT    NOT NULL,           -- local date, YYYY-MM-DD (the UI's clock)
+    seconds INTEGER NOT NULL DEFAULT 0,
+    pages   INTEGER NOT NULL DEFAULT 0, -- pages turned
+    PRIMARY KEY (book_id, day)
+) WITHOUT ROWID;
+CREATE INDEX reading_log_day ON reading_log(day);
+
+ALTER TABLE progress ADD COLUMN finished_at INTEGER;
+UPDATE progress SET finished_at = updated_at WHERE finished = 1;
+CREATE INDEX progress_finished ON progress(finished_at) WHERE finished = 1;
+"#;
+
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6];
 
 /// Gives authorless books the author named by their folder or file name.
 /// Books edited by hand are left alone; a book whose file could not be
@@ -470,10 +486,10 @@ pub(crate) fn parse_format(s: String) -> Format {
     Format::parse(&s).unwrap_or(Format::Epub)
 }
 
-const SUMMARY_COLS: &str =
+pub(crate) const SUMMARY_COLS: &str =
     "b.id, b.title, b.authors, b.series, b.series_index, b.format, b.cover_key, p.percent, b.favorite";
 
-fn row_to_summary(r: &Row) -> rusqlite::Result<BookSummary> {
+pub(crate) fn row_to_summary(r: &Row) -> rusqlite::Result<BookSummary> {
     let cover_key: Option<String> = r.get(6)?;
     Ok(BookSummary {
         id: r.get(0)?,
@@ -629,9 +645,13 @@ pub fn get_book(conn: &Connection, id: BookId) -> Result<Book> {
 
 pub fn set_progress(conn: &Connection, id: BookId, locator: &str, percent: f64, finished: bool) -> Result<()> {
     conn.execute(
-        "INSERT INTO progress(book_id, locator, percent, finished, updated_at) VALUES (?1,?2,?3,?4,?5)
+        "INSERT INTO progress(book_id, locator, percent, finished, updated_at, finished_at)
+         VALUES (?1,?2,?3,?4,?5, CASE WHEN ?4 THEN ?5 END)
          ON CONFLICT(book_id) DO UPDATE SET locator=excluded.locator, percent=excluded.percent,
-           finished=excluded.finished, updated_at=excluded.updated_at",
+           finished=excluded.finished, updated_at=excluded.updated_at,
+           finished_at = CASE WHEN NOT excluded.finished THEN NULL
+                              WHEN progress.finished AND progress.finished_at IS NOT NULL THEN progress.finished_at
+                              ELSE excluded.updated_at END",
         params![id, locator, percent.clamp(0.0, 1.0), finished, now()],
     )?;
     Ok(())

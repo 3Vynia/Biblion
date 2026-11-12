@@ -11,6 +11,7 @@ use crate::covers::CoverCache;
 use crate::dictionary::{self, Definition, Dictionary, DictionaryInfo};
 use crate::health::{self, DuplicateGroup, DuplicateKind, HashCache, HealthBook, HealthCounts, ProblemKind};
 use crate::scanner::{self, ScanEvent, ScanOptions, ScanReport};
+use crate::stats::{self, ReadingStats};
 use crate::{
     db, formats, Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, NewAnnotation, Book, BookId, BookStats, BookQuery, BookSummary, Error, Format, LibraryStats, Metadata, Page, Result,
     Shelf, TagEntry,
@@ -165,6 +166,17 @@ impl Library {
 
     pub fn set_progress(&self, id: BookId, locator: &str, percent: f64, finished: bool) -> Result<()> {
         self.user_write(|c| db::set_progress(c, id, locator, percent, finished))
+    }
+
+    /// Adds reading time and page turns to a book's (local) day.
+    pub fn log_reading(&self, id: BookId, day: &str, seconds: u32, pages: u32) -> Result<()> {
+        self.user_write(|c| stats::log(c, id, day, seconds, pages))
+    }
+
+    /// Reading statistics for the days `from..=to` (`YYYY-MM-DD`) and the
+    /// books finished between two unix times.
+    pub fn reading_stats(&self, from: &str, to: &str, finished_from: i64, finished_to: i64) -> Result<ReadingStats> {
+        self.read(|c| stats::stats(c, from, to, finished_from, finished_to, 8))
     }
 
     pub fn set_favorite(&self, id: BookId, favorite: bool) -> Result<()> {

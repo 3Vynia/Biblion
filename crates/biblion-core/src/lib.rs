@@ -12,6 +12,7 @@ pub mod health;
 pub mod library;
 pub mod model;
 pub mod scanner;
+pub mod stats;
 
 pub use error::{Error, Result};
 pub use library::Library;
