@@ -578,3 +578,52 @@ fn authors_come_from_the_path_when_the_book_has_none() {
     let found = lib.list_books(&BookQuery { text: Some("caudett".into()), limit: 10, ..Default::default() }).unwrap();
     assert_eq!(found.items.len(), 1, "the author is searchable");
 }
+
+#[test]
+fn health_finds_duplicates_unreadable_and_missing_books() {
+    use biblion_core::health::{DuplicateKind, ProblemKind};
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    write_epub(&books.join("a/one.epub"), "Dune", "Frank Herbert", 1);
+    std::fs::create_dir_all(books.join("b")).unwrap();
+    std::fs::copy(books.join("a/one.epub"), books.join("b/copy.epub")).unwrap();
+    write_epub(&books.join("c/other edition.epub"), "Dune", "Frank Herbert", 2);
+    // Same size, same first and last 64 KiB, different middle: not a copy.
+    let edge = |middle: u8| {
+        let mut v = vec![7u8; 200 * 1024];
+        v[100 * 1024] = middle;
+        v
+    };
+    std::fs::write(books.join("edge1.pdf"), edge(1)).unwrap();
+    std::fs::write(books.join("edge2.pdf"), edge(2)).unwrap();
+    write_epub(&books.join("gone.epub"), "Gone", "Some One", 3);
+    let data = tmp.path().join("data");
+    let lib = Library::open(&data).unwrap();
+    scan(&lib, &books);
+    std::fs::remove_file(books.join("gone.epub")).unwrap();
+    scan(&lib, &books);
+
+    let identical = lib.duplicates(DuplicateKind::Identical).unwrap();
+    assert_eq!(identical.len(), 1, "the edge-only match is not a copy: {identical:?}");
+    assert_eq!(identical[0].books.len(), 2);
+    assert!(identical[0].wasted > 0);
+
+    let same = lib.duplicates(DuplicateKind::SameBook).unwrap();
+    assert_eq!(same.len(), 1);
+    assert_eq!(same[0].books.len(), 3);
+
+    let counts = lib.health_counts().unwrap();
+    assert_eq!((counts.unreadable, counts.missing), (2, 1));
+    let unreadable = lib.problem_books(ProblemKind::Unreadable, 0, 10).unwrap();
+    assert!(unreadable.items.iter().all(|b| b.error.is_some() && b.path.ends_with(".pdf")));
+    let missing = lib.problem_books(ProblemKind::Missing, 0, 10).unwrap();
+    assert_eq!(missing.items[0].title, "Gone");
+
+    // Forgetting a book leaves its file alone.
+    let copy = identical[0].books[1].clone();
+    assert_eq!(lib.remove_books(&[copy.id, missing.items[0].id]).unwrap(), 2);
+    assert!(std::path::Path::new(&copy.path).exists());
+    assert!(lib.duplicates(DuplicateKind::Identical).unwrap().is_empty());
+    assert_eq!(lib.health_counts().unwrap().missing, 0);
+    assert!(lib.list_books(&BookQuery { text: Some("gone".into()), limit: 10, ..Default::default() }).unwrap().items.is_empty());
+}
