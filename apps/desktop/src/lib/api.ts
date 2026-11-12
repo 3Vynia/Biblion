@@ -14,6 +14,7 @@ import type {
   CmdError,
   Definition,
   DictionaryInfo,
+  Format,
   LibraryStats,
   NewAnnotation,
   Page,
@@ -66,6 +67,10 @@ export const api = {
   listAnnotations: (query: AnnotationQuery) => invoke<Page<AnnotationEntry>>('list_annotations', { query }),
   annotationCounts: () => invoke<[number, number]>('annotation_counts'),
 
+  comicPages: (id: BookId) => invoke<string[]>('comic_pages', { id }),
+  booksWithoutCover: (format: Format, limit: number) => invoke<BookId[]>('books_without_cover', { format, limit }),
+  setCover: (id: BookId, image: Uint8Array) => invoke<string>('set_cover', { id, image: Array.from(image) }),
+
   listDictionaries: () => invoke<DictionaryInfo[]>('list_dictionaries'),
   define: (word: string) => invoke<Definition[]>('define', { word }),
   installDictionary: (path: string) => invoke<DictionaryInfo[]>('install_dictionary', { path }),
@@ -82,6 +87,9 @@ export const api = {
 
 /** URL of a cover thumbnail, served from disk by the `thumb://` scheme. */
 export const thumbUrl = (coverKey: string) => convertFileSrc(coverKey, 'thumb')
+
+/** URL of one page image of a comic, served by the `comic://` scheme. */
+export const comicPageUrl = (id: BookId, page: number) => convertFileSrc(`${id}/${page}`, 'comic')
 
 /** URL of a book file, served by the `book://` scheme. */
 export const bookUrl = (id: BookId) => convertFileSrc(String(id), 'book')
