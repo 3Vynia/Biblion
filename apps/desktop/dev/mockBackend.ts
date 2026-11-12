@@ -146,6 +146,50 @@ let uiSettings: unknown = null
 let ambienceSettings: unknown = null
 let watchFolders = true
 
+// Reading log: what the readers send, on top of a made-up history so the
+// statistics screen has something to show.
+const readingLog = new Map<string, { book: number; day: string; seconds: number; pages: number }>()
+{
+  const dayOf = (t: number) => {
+    const d = new Date(t)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  for (let i = 1; i < 240; i++) {
+    if ((i * 7) % 10 < 4) continue // some days without reading
+    const book = 1 + ((i * 37) % 120)
+    const day = dayOf(Date.now() - i * 86_400_000)
+    readingLog.set(`${book}|${day}`, { book, day, seconds: 300 + ((i * 1013) % 4200), pages: 4 + ((i * 13) % 40) })
+  }
+}
+
+function readingStats(from: string, to: string, finishedFrom: number, finishedTo: number) {
+  const entries = [...readingLog.values()].filter((e) => e.day >= from && e.day <= to)
+  const days = new Map<string, { day: string; seconds: number; pages: number }>()
+  const books = new Map<number, number>()
+  const authors = new Map<string, number>()
+  for (const e of entries) {
+    const d = days.get(e.day) ?? { day: e.day, seconds: 0, pages: 0 }
+    d.seconds += e.seconds
+    d.pages += e.pages
+    days.set(e.day, d)
+    books.set(e.book, (books.get(e.book) ?? 0) + e.seconds)
+    const a = rows[e.book - 1].authors[0]
+    authors.set(a, (authors.get(a) ?? 0) + e.seconds)
+  }
+  const top = <K>(m: Map<K, number>) => [...m].sort((a, b) => b[1] - a[1]).slice(0, 8)
+  const finished = rows
+    .filter((r) => r.finished)
+    .map((r, i) => ({ book: r as BookSummary, finished_at: Math.floor(Date.now() / 1000) - i * 9 * 86_400 }))
+    .filter((f) => f.finished_at >= finishedFrom && f.finished_at < finishedTo)
+  return {
+    days: [...days.values()].sort((a, b) => (a.day < b.day ? -1 : 1)),
+    finished,
+    top_books: top(books).map(([id, seconds]) => ({ book: rows[id - 1] as BookSummary, seconds })),
+    top_authors: top(authors).map(([name, seconds]) => ({ name, seconds })),
+    books_read: books.size,
+  }
+}
+
 // Library health: a few duplicate groups, unreadable and missing books.
 const forgotten = new Set<number>()
 const unreadable = new Map<number, string>(
@@ -305,6 +349,16 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       return null
     case 'set_progress':
       return null
+    case 'log_reading': {
+      const key = `${args.id}|${args.day}`
+      const e = readingLog.get(key) ?? { book: args.id as number, day: args.day as string, seconds: 0, pages: 0 }
+      e.seconds += args.seconds as number
+      e.pages += args.pages as number
+      readingLog.set(key, e)
+      return null
+    }
+    case 'reading_stats':
+      return readingStats(args.from as string, args.to as string, args.finishedFrom as number, args.finishedTo as number)
     case 'duplicates':
       return duplicateGroups(args.kind as DuplicateKind)
     case 'health_counts':

@@ -23,6 +23,7 @@ export type Route =
   | { name: 'series' }
   | { name: 'subjects' }
   | { name: 'notes' }
+  | { name: 'stats' }
   | { name: 'collections' }
   | { name: 'formats' }
   | { name: 'health' }
@@ -42,6 +43,7 @@ export type Section =
   | 'series'
   | 'subjects'
   | 'notes'
+  | 'stats'
   | 'collections'
   | 'formats'
   | 'health'

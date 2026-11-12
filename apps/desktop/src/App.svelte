@@ -13,6 +13,7 @@
   import SeriesView from './views/SeriesView.svelte'
   import CollectionsView from './views/CollectionsView.svelte'
   import FormatsView from './views/FormatsView.svelte'
+  import StatsView from './views/StatsView.svelte'
   import HealthView from './views/HealthView.svelte'
   import SettingsView from './views/SettingsView.svelte'
   import SubjectsView from './views/SubjectsView.svelte'
@@ -238,6 +239,8 @@
               <SubjectsView />
             {:else if route.name === 'notes'}
               <NotesView onopen={openBookAt} />
+            {:else if route.name === 'stats'}
+              <StatsView onopen={(b) => (selectedId = b.id)} />
             {:else if route.name === 'collections'}
               <CollectionsView />
             {:else if route.name === 'formats'}
