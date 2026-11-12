@@ -157,8 +157,14 @@ apps/desktop/
   person's name (capitalised words, particles like "de", no genre words such
   as "Ciencia Ficción"). Migration v5 applies this to existing libraries.
 
+- **Library health** (`health.rs`, Health screen): identical copies (quick
+  fingerprint, then a full BLAKE3 hash kept in memory per path, size and
+  mtime, so files that only share their edges are never called copies),
+  the same title and author in different files, unreadable files and missing
+  ones. Trashing uses the system trash; forgetting only removes records.
+  Every one of these asks first.
+
 ## To do / ideas
 
 - Cursor (keyset) pagination if jumps beyond 1M rows are ever needed.
-- Duplicates screen (`Library::duplicates`) and broken-files screen (`scan_error`).
 - Optional online metadata (Open Library).

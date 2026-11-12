@@ -70,8 +70,10 @@ screen with "continue reading", a virtualised cover grid with filters,
 authors, series, subjects and collections, full book details, an
 EPUB/MOBI/AZW3 reader with themes, highlights, notes, bookmarks and a
 dictionary, a PDF reader (zoom, contents, search, night mode), a comic reader
-(spreads, manga, strip), a Notes screen for the whole library and a
-generative reading ambience (soundscapes, rain, fire, sea, sleep timer).
+(spreads, manga, strip), a Notes screen for the whole library, a
+generative reading ambience (soundscapes, rain, fire, sea, sleep timer),
+folder watching and a library health screen (duplicates, unreadable and
+missing files).
 
 ## License
 
