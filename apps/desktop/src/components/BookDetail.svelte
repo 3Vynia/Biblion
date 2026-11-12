@@ -16,6 +16,7 @@
     plural,
     roleLabel,
   } from '../lib/format'
+  import { confirm } from '../lib/dialog.svelte'
   import { library } from '../lib/library.svelte'
   import { slideIn } from '../lib/motion'
   import { authorRoute, nav, seriesRoute, tagRoute } from '../lib/nav.svelte'
@@ -107,6 +108,14 @@
   async function toggleFavorite() {
     if (!book) return
     const next = !book.favorite
+    if (!next) {
+      const ok = await confirm({
+        title: 'Remove from favourites?',
+        message: `“${book.metadata.title ?? 'This book'}” stays in your library.`,
+        confirmLabel: 'Remove',
+      })
+      if (!ok || !book) return
+    }
     book = { ...book, favorite: next }
     if (next) heartPop++
     try {
@@ -121,6 +130,16 @@
   async function toggleShelf(shelf: number) {
     if (!book) return
     const member = !memberOf.includes(shelf)
+    if (!member) {
+      const name = library.shelves.find((s) => s.id === shelf)?.name ?? 'this collection'
+      const ok = await confirm({
+        title: `Remove from “${name}”?`,
+        message: 'The book stays in your library; only the collection changes.',
+        confirmLabel: 'Remove from collection',
+        danger: true,
+      })
+      if (!ok || !book) return
+    }
     memberOf = member ? [...memberOf, shelf] : memberOf.filter((s) => s !== shelf)
     try {
       await api.setInShelf(shelf, book.id, member)

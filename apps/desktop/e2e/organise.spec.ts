@@ -129,3 +129,33 @@ test('select all picks every book, Esc leaves selection', async ({ page }) => {
   await expect(page.getByRole('toolbar', { name: 'Selection' })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'To read', level: 1 })).toBeVisible()
 })
+
+test('unfavouriting and leaving a collection from the book panel ask first', async ({ page }) => {
+  await page.getByRole('button', { name: /All books/ }).click()
+  await page.locator('.cell .card').first().click()
+  const detail = page.getByRole('complementary', { name: 'Book details' })
+  const dialog = page.getByRole('alertdialog')
+
+  // Adding needs no confirmation; taking away does.
+  const heart = detail.locator('button.heart')
+  if ((await heart.getAttribute('aria-pressed')) !== 'true') await heart.click()
+  await expect(heart).toHaveAttribute('aria-pressed', 'true')
+  await heart.click()
+  await expect(dialog).toContainText('Remove from favourites?')
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(heart).toHaveAttribute('aria-pressed', 'true')
+  await heart.click()
+  await dialog.getByRole('button', { name: 'Remove' }).click()
+  await expect(heart).toHaveAttribute('aria-pressed', 'false')
+
+  const toRead = detail.getByRole('button', { name: 'To read' })
+  await toRead.click()
+  await expect(toRead).toHaveAttribute('aria-pressed', 'true')
+  await toRead.click()
+  await expect(dialog).toContainText('Remove from “To read”?')
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  await expect(toRead).toHaveAttribute('aria-pressed', 'true')
+  await toRead.click()
+  await dialog.getByRole('button', { name: 'Remove from collection' }).click()
+  await expect(toRead).toHaveAttribute('aria-pressed', 'false')
+})
