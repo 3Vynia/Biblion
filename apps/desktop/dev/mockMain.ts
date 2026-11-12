@@ -6,6 +6,13 @@ import { handle } from './mockBackend'
 
 mockConvertFileSrc('linux')
 
+// Comic pages come from comic://<id>/<page>; use the sample pages instead.
+const internals = (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string, s?: string) => string } })
+  .__TAURI_INTERNALS__
+const convert = internals.convertFileSrc
+internals.convertFileSrc = (path, scheme = 'asset') =>
+  scheme === 'comic' ? `/dev/fixtures/comic/${Number(path.split('/')[1]) % 7}.jpg` : convert(path, scheme)
+
 // The reader fetches books from book://; serve the test EPUB instead.
 const realFetch = window.fetch.bind(window)
 window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
