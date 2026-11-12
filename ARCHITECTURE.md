@@ -99,8 +99,12 @@ apps/desktop/
   scheme: no bytes over IPC and no asset-protocol scope to manage. Keys are
   validated, so the scheme cannot read arbitrary files.
 - **Book files** are served by `book://localhost/<book_id>`; only ids that
-  exist in the database resolve. Range requests for large PDFs come with
-  the pdf.js reader.
+  exist in the database resolve. `Range` requests are supported (206 with
+  `Content-Range`), so pdf.js reads a 500 MB PDF piece by piece through a
+  `PDFDataRangeTransport` instead of loading it whole.
+- **Comic pages** are served by `comic://localhost/<book_id>/<page>` straight
+  into `<img>` tags; the comic reader shows spreads (cover alone, then pairs),
+  manga order or a continuous strip.
 - **Grid:** custom virtualisation (only visible rows plus overscan are in
   the DOM), pages of 200 books from `list_books(offset, limit)`, at most 12
   pages in memory, stale responses from a previous search are dropped.
@@ -122,9 +126,18 @@ apps/desktop/
 - **UI tests:** `dev/mock.html` runs the real UI in a browser against an
   in-memory imitation of the commands (`dev/mockBackend.ts`), with a small
   original EPUB in `dev/fixtures`. `pnpm e2e` drives it with Playwright.
-- **PDF covers (next):** a background UI task walks
-  `books_without_cover("pdf")`, renders page 1 with pdf.js and calls
-  `set_cover`.
+- **PDF reader:** pdf.js 6 with a virtualised column of pages (only pages
+  near the screen keep a canvas), a text layer for selection, copy and the
+  dictionary, outline, search with highlights, and night themes that invert
+  the page. The reading position survives zoom and window changes.
+- **PDF covers:** a background job walks `books_without_cover("pdf")`,
+  renders page 1 and calls `set_cover`. It pauses while a book is open and
+  never retries a PDF that failed in the same session.
+- **Dictionaries:** StarDict files (`.ifo` + `.idx[.gz]` + `.dict[.dz]`) in
+  the data folder's `dictionaries/`, installed from `.ifo`, `.zip`,
+  `.tar.gz` or `.tar.xz` (FreeDict). dictzip files are read chunk by chunk.
+  When nothing is found offline the UI can ask Wiktionary (only the word is
+  sent; it can be turned off). Definitions are always shown as plain text.
 
 ## To do / ideas
 

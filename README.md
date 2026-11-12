@@ -65,8 +65,9 @@ cargo run --release -p biblion-core --example thumb_bench
 Work in progress. The core and the CLI work. The desktop app has a home
 screen with "continue reading", a virtualised cover grid with filters,
 authors, series, subjects and collections, full book details, an
-EPUB/MOBI/AZW3 reader with themes, highlights, notes and bookmarks, and a
-Notes screen for the whole library.
+EPUB/MOBI/AZW3 reader with themes, highlights, notes, bookmarks and a
+dictionary, a PDF reader (zoom, contents, search, night mode), a comic reader
+(spreads, manga, strip) and a Notes screen for the whole library.
 
 ## License
 
