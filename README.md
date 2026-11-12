@@ -72,8 +72,8 @@ EPUB/MOBI/AZW3 reader with themes, highlights, notes, bookmarks and a
 dictionary, a PDF reader (zoom, contents, search, night mode), a comic reader
 (spreads, manga, strip), a Notes screen for the whole library, a
 generative reading ambience (soundscapes, rain, fire, sea, sleep timer),
-folder watching and a library health screen (duplicates, unreadable and
-missing files).
+folder watching, a library health screen (duplicates, unreadable and
+missing files) and reading statistics (time, streaks, yearly goal).
 
 ## License
 
