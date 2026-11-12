@@ -164,6 +164,13 @@ apps/desktop/
   ones. Trashing uses the system trash; forgetting only removes records.
   Every one of these asks first.
 
+- **Reading statistics:** the readers count active time (window visible,
+  something done in the last 5 minutes) and page turns, and send them every
+  30 s to `reading_log` (book, local day; migration v6). `progress.finished_at`
+  records when a book was finished. The Stats screen draws the year from
+  these: time read, streaks, a yearly goal, a calendar, time per month (with
+  a table view), finished and most-read books.
+
 ## To do / ideas
 
 - Cursor (keyset) pagination if jumps beyond 1M rows are ever needed.
