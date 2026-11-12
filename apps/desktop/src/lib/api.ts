@@ -78,6 +78,8 @@ export const api = {
 
   analyzeBook: (id: BookId) => invoke<BookStats>('analyze_book', { id }),
   getUiSettings: () => invoke<unknown>('get_ui_settings'),
+  getAmbienceSettings: () => invoke<unknown>('get_ambience_settings'),
+  setAmbienceSettings: (value: object) => invoke<void>('set_ambience_settings', { value }),
   setUiSettings: (value: object) => invoke<void>('set_ui_settings', { value }),
   dataDir: () => invoke<string>('data_dir'),
 
