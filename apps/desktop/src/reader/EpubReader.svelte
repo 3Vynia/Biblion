@@ -14,6 +14,8 @@
   import DictionaryCard from './DictionaryCard.svelte'
   import { wordFromSelection } from '../lib/dictionary'
   import { ui } from '../lib/uiSettings.svelte'
+  import AmbiencePanel from '../components/AmbiencePanel.svelte'
+  import { ambience } from '../lib/ambience/store.svelte'
   import { THEMES, formatMinutes, readerCss, rendererAttributes } from './readerSettings'
   import { readerSettings } from './settingsStore.svelte'
   import { rise } from '../lib/motion'
@@ -36,7 +38,7 @@
   /** Share of the page width that turns pages when clicked (each side). */
   const TAP_ZONE = 0.25
 
-  type Panel = 'toc' | 'search' | 'notes' | 'settings' | null
+  type Panel = 'toc' | 'search' | 'notes' | 'ambience' | 'settings' | null
 
   // foliate-js elements are untyped custom elements.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -271,6 +273,8 @@
     tocHref = d.tocItem?.href ?? null
     page = d.location?.total ? { current: d.location.current + 1, total: d.location.total } : null
     minutesLeft = typeof d.time?.section === 'number' ? d.time.section : null
+    // A new page (not the first one shown): the ambience may answer.
+    if (pageCfi && d.cfi && d.cfi !== pageCfi) ambience.pageTurned()
     pageCfi = d.cfi ?? null
     pageText = (d.range?.toString?.() ?? '').replace(/\s+/g, ' ').trim().slice(0, 160)
     selection = null
@@ -466,6 +470,7 @@
 
   onMount(() => {
     window.addEventListener('keydown', onKey)
+    ambience.bookOpened()
     load().catch((e) => {
       status = 'error'
       error = errorMessage(e)
@@ -536,6 +541,14 @@
     >
     <button
       class="icon"
+      class:on={panel === 'ambience'}
+      class:playing={ambience.playing}
+      onclick={() => togglePanel('ambience')}
+      title="Ambience"
+      aria-label="Ambience"><Icon name="sound" size={18} /></button
+    >
+    <button
+      class="icon"
       class:on={panel === 'settings'}
       onclick={() => togglePanel('settings')}
       title="Reading settings"
@@ -564,6 +577,9 @@
         {:else if panel === 'notes'}
           <h3>Notes</h3>
           <NotesPanel {annotations} ongo={goToAnnotation} ondelete={deleteAnnotation} oncopyall={copyAllNotes} />
+        {:else if panel === 'ambience'}
+          <h3>Ambience</h3>
+          <AmbiencePanel compact />
         {:else if panel === 'search'}
           <h3>Search</h3>
           <SearchPanel {view} ongo={(cfi) => view.goTo(cfi)} />
@@ -702,6 +718,10 @@
   .icon:hover:not(:disabled),
   .icon.on {
     background: var(--r-hover);
+  }
+
+  .icon.playing {
+    color: var(--r-link);
   }
 
   .bookmark.marked {
