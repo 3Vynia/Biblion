@@ -132,6 +132,7 @@ const DEFINITIONS: Record<string, string> = {
 let readerSettings: unknown = null
 let uiSettings: unknown = null
 let ambienceSettings: unknown = null
+let watchFolders = true
 declare global {
   interface Window {
     __calls: { cmd: string; args: Record<string, unknown> }[]
@@ -244,6 +245,11 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       uiSettings = args.value
       return null
     case 'set_progress':
+      return null
+    case 'get_watch_folders':
+      return watchFolders
+    case 'set_watch_folders':
+      watchFolders = args.on as boolean
       return null
     case 'get_ambience_settings':
       return ambienceSettings

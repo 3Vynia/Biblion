@@ -65,3 +65,26 @@ test('dictionaries are listed and removing one asks first; online lookups can be
   await page.getByText('Look words up online').click()
   await expect(online).not.toBeChecked()
 })
+
+test('folder watching can be turned off, and changes found by it show up', async ({ page }) => {
+  await page.getByRole('button', { name: 'Settings' }).click()
+  const watch = page.getByRole('switch', { name: /Watch folders for changes/ })
+  await expect(watch).toBeChecked()
+  await page.getByText('Watch folders for changes').click()
+  await expect(watch).not.toBeChecked()
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { __calls: { cmd: string; args: { on: boolean } }[] }).__calls.findLast((c) => c.cmd === 'set_watch_folders')?.args.on),
+    )
+    .toBe(false)
+
+  // What the backend sends after rescanning a watched folder.
+  await page.evaluate(() =>
+    (window as unknown as { __emit: (e: string, p: unknown) => Promise<void> }).__emit('library-changed', {
+      found: 3, unchanged: 0, added: 3, updated: 0, missing: 0, errors: 0, covers: 0, elapsed_ms: 12, error_samples: [],
+    }),
+  )
+  await expect(page.getByRole('status')).toHaveText('3 new books in your library')
+  await page.getByRole('button', { name: 'Dismiss' }).click()
+  await expect(page.getByRole('status')).toHaveCount(0)
+})

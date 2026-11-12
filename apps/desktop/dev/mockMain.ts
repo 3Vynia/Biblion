@@ -2,6 +2,7 @@
 // in-memory fake backend, so screens can be tested without the desktop app.
 // Open http://localhost:1420/dev/mock.html while `pnpm dev` is running.
 import { mockConvertFileSrc, mockIPC } from '@tauri-apps/api/mocks'
+import { emit } from '@tauri-apps/api/event'
 import { formatOf, handle } from './mockBackend'
 
 mockConvertFileSrc('linux')
@@ -31,5 +32,7 @@ window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   }
   return realFetch(input, init)
 }
-mockIPC((cmd, args) => handle(cmd, (args ?? {}) as Record<string, unknown>))
+mockIPC((cmd, args) => handle(cmd, (args ?? {}) as Record<string, unknown>), { shouldMockEvents: true })
+// Lets tests play the backend's folder watcher.
+;(window as unknown as { __emit: typeof emit }).__emit = emit
 await import('../src/main')

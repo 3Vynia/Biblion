@@ -1,6 +1,7 @@
 // Typed wrappers around the Tauri commands in src-tauri/src/commands.rs.
 
 import { Channel, convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import type {
   Annotation,
   AnnotationEntry,
@@ -79,6 +80,10 @@ export const api = {
   analyzeBook: (id: BookId) => invoke<BookStats>('analyze_book', { id }),
   getUiSettings: () => invoke<unknown>('get_ui_settings'),
   getAmbienceSettings: () => invoke<unknown>('get_ambience_settings'),
+  getWatchFolders: () => invoke<boolean>('get_watch_folders'),
+  setWatchFolders: (on: boolean) => invoke<void>('set_watch_folders', { on }),
+  /** Called after the backend rescanned watched folders that changed. */
+  onLibraryChanged: (cb: (report: ScanReport) => void) => listen<ScanReport>('library-changed', (e) => cb(e.payload)),
   setAmbienceSettings: (value: object) => invoke<void>('set_ambience_settings', { value }),
   setUiSettings: (value: object) => invoke<void>('set_ui_settings', { value }),
   dataDir: () => invoke<string>('data_dir'),

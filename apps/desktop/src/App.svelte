@@ -18,7 +18,7 @@
   import NotesView from './views/NotesView.svelte'
   import ConfirmDialog from './components/ConfirmDialog.svelte'
   import { api, errorMessage } from './lib/api'
-  import { READABLE, isComic } from './lib/format'
+  import { READABLE, formatCount, isComic } from './lib/format'
   import { library } from './lib/library.svelte'
   import { rise } from './lib/motion'
   import { nav, routeKey } from './lib/nav.svelte'
@@ -64,6 +64,24 @@
   // Don't render PDF covers while a book is open.
   $effect(() => {
     pdfCovers.paused = !!reading
+  })
+
+  // The backend rescans watched folders on its own; show what it found.
+  let notice = $state<string | null>(null)
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined
+  onMount(() => {
+    const unlisten = api.onLibraryChanged((report) => {
+      library.changed()
+      if (report.added === 0) return
+      pdfCovers.run()
+      notice = `${formatCount(report.added)} new ${report.added === 1 ? 'book' : 'books'} in your library`
+      clearTimeout(noticeTimer)
+      noticeTimer = setTimeout(() => (notice = null), 5000)
+    })
+    return () => {
+      unlisten.then((f) => f())
+      clearTimeout(noticeTimer)
+    }
   })
 
   onMount(async () => {
@@ -243,7 +261,44 @@
 
 <ConfirmDialog />
 
+{#if notice}
+  <div class="notice" role="status" in:rise={{ y: 12, duration: 260 }} out:rise={{ y: 12, duration: 180 }}>
+    <Icon name="sparkle" size={15} />
+    {notice}
+    <button class="ghost" onclick={() => (notice = null)} aria-label="Dismiss"><Icon name="close" size={13} /></button>
+  </div>
+{/if}
+
 <style>
+  .notice {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    translate: -50% 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface) 92%, var(--accent));
+    color: var(--text);
+    font-size: 13px;
+    box-shadow: 0 10px 30px rgb(0 0 0 / 0.25);
+    backdrop-filter: blur(10px);
+  }
+
+  .notice > :global(svg) {
+    color: var(--accent);
+  }
+
+  .notice button {
+    padding: 2px;
+    margin-right: -6px;
+    color: var(--muted);
+  }
+
   .app {
     display: grid;
     grid-template-columns: auto 1fr;

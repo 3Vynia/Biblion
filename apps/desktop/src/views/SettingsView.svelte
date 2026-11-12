@@ -74,8 +74,20 @@
     }
   }
 
+  let watchFolders = $state(true)
+  async function setWatch(on: boolean) {
+    watchFolders = on
+    try {
+      await api.setWatchFolders(on)
+    } catch (e) {
+      watchFolders = !on
+      folderError = errorMessage(e)
+    }
+  }
+
   onMount(() => {
     readerSettings.load()
+    api.getWatchFolders().then((v) => (watchFolders = v)).catch(() => {})
     api.dataDir().then((d) => (dataDir = d)).catch(() => {})
     api.listDictionaries().then((d) => (dictionaries = d)).catch(() => {})
     // Highlight the section being read in the side index.
@@ -275,6 +287,12 @@
           description="A quick check of the folders each time Biblion opens. Unchanged files are skipped, so it takes seconds even for large libraries."
           checked={ui.value.scanOnStartup}
           onchange={(v) => ui.update({ scanOnStartup: v })}
+        />
+        <Switch
+          label="Watch folders for changes"
+          description="Books you add, move or delete in these folders show up on their own, a few seconds later. Files still downloading are read again once they settle."
+          checked={watchFolders}
+          onchange={setWatch}
         />
       </div>
     </section>
