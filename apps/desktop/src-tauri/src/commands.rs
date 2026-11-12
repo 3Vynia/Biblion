@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use biblion_core::dictionary::{Definition, DictionaryInfo};
+use biblion_core::stats::ReadingStats;
 use biblion_core::health::{DuplicateGroup, DuplicateKind, HealthBook, HealthCounts, ProblemKind};
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
 use biblion_core::{
@@ -435,6 +436,27 @@ pub async fn set_cover(state: State<'_, AppState>, id: BookId, image: Vec<u8>) -
     }
     let lib = state.lib.clone();
     blocking(move || lib.set_cover(id, &image)).await
+}
+
+// ── Reading statistics ───────────────────────────────────────────────────
+
+/// Adds reading time and page turns to a book's local day (`YYYY-MM-DD`).
+#[tauri::command]
+pub async fn log_reading(state: State<'_, AppState>, id: BookId, day: String, seconds: u32, pages: u32) -> CmdResult<()> {
+    let lib = state.lib.clone();
+    blocking(move || lib.log_reading(id, &day, seconds, pages)).await
+}
+
+#[tauri::command]
+pub async fn reading_stats(
+    state: State<'_, AppState>,
+    from: String,
+    to: String,
+    finished_from: i64,
+    finished_to: i64,
+) -> CmdResult<ReadingStats> {
+    let lib = state.lib.clone();
+    blocking(move || lib.reading_stats(&from, &to, finished_from, finished_to)).await
 }
 
 // ── Library health ───────────────────────────────────────────────────────

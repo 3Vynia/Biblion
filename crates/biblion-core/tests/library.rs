@@ -517,10 +517,11 @@ fn upgrading_recomputes_title_sort_keys() {
         let lib = Library::open(&data).unwrap();
         scan(&lib, &books);
     }
-    // Pretend the library was indexed by a version with the old keys.
+    // Pretend the library was indexed by a version with the old keys (and
+    // undo the later migrations, which run again).
     {
         let conn = rusqlite::Connection::open(data.join("library.db")).unwrap();
-        conn.execute_batch("UPDATE books SET sort_title = 'zzz' || title; PRAGMA user_version = 3;").unwrap();
+        conn.execute_batch("UPDATE books SET sort_title = 'zzz' || title; DROP TABLE reading_log; DROP INDEX progress_finished; ALTER TABLE progress DROP COLUMN finished_at; PRAGMA user_version = 3;").unwrap();
     }
     let lib = Library::open(&data).unwrap();
     let titles: Vec<String> = lib
@@ -569,6 +570,7 @@ fn authors_come_from_the_path_when_the_book_has_none() {
         conn.execute_batch(
             "DELETE FROM book_authors; UPDATE books SET authors = '', author_sort = '',
              title = replace(replace(path, rtrim(path, replace(path, '/', '')), ''), '_', ' ');
+             DROP TABLE reading_log; DROP INDEX progress_finished; ALTER TABLE progress DROP COLUMN finished_at;
              PRAGMA user_version = 4;",
         )
         .unwrap();
@@ -626,4 +628,47 @@ fn health_finds_duplicates_unreadable_and_missing_books() {
     assert!(lib.duplicates(DuplicateKind::Identical).unwrap().is_empty());
     assert_eq!(lib.health_counts().unwrap().missing, 0);
     assert!(lib.list_books(&BookQuery { text: Some("gone".into()), limit: 10, ..Default::default() }).unwrap().items.is_empty());
+}
+
+#[test]
+fn reading_time_and_finished_books_are_counted() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    write_epub(&books.join("a.epub"), "Dune", "Frank Herbert", 1);
+    write_epub(&books.join("b.epub"), "Emma", "Jane Austen", 2);
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    scan(&lib, &books);
+    let ids: Vec<i64> = lib
+        .list_books(&BookQuery { sort: SortBy::Title, limit: 10, ..Default::default() })
+        .unwrap()
+        .items
+        .iter()
+        .map(|b| b.id)
+        .collect();
+    let (dune, emma) = (ids[0], ids[1]);
+
+    lib.log_reading(dune, "2026-11-10", 600, 12).unwrap();
+    lib.log_reading(dune, "2026-11-10", 300, 5).unwrap();
+    lib.log_reading(emma, "2026-11-11", 120, 2).unwrap();
+    lib.log_reading(emma, "2025-12-31", 99_999, 1).unwrap(); // clamped, and outside the range
+    assert!(lib.log_reading(emma, "11/11/2026", 10, 1).is_err());
+
+    lib.set_progress(dune, "x", 1.0, true).unwrap();
+    let s = lib.reading_stats("2026-01-01", "2026-12-31", 0, i64::MAX).unwrap();
+    assert_eq!(s.days.len(), 2);
+    assert_eq!((s.days[0].seconds, s.days[0].pages), (900, 17));
+    assert_eq!(s.books_read, 2);
+    assert_eq!(s.top_books[0].book.title, "Dune");
+    assert_eq!(s.top_authors[0].name, "Frank Herbert");
+    assert_eq!(s.finished.len(), 1);
+    let first_finish = s.finished[0].finished_at;
+
+    // Saving progress again keeps the date it was finished; un-finishing clears it.
+    lib.set_progress(dune, "y", 1.0, true).unwrap();
+    assert_eq!(lib.reading_stats("2026-01-01", "2026-12-31", 0, i64::MAX).unwrap().finished[0].finished_at, first_finish);
+    lib.set_progress(dune, "y", 0.5, false).unwrap();
+    assert!(lib.reading_stats("2026-01-01", "2026-12-31", 0, i64::MAX).unwrap().finished.is_empty());
+
+    let old = lib.reading_stats("2025-01-01", "2025-12-31", 0, i64::MAX).unwrap();
+    assert_eq!(old.days[0].seconds, 15 * 60);
 }
