@@ -5,6 +5,7 @@
   import ScanPanel from './components/ScanPanel.svelte'
   import Icon from './components/Icon.svelte'
   import EpubReader from './reader/EpubReader.svelte'
+  import ComicReader from './reader/ComicReader.svelte'
   import HomeView from './views/HomeView.svelte'
   import BooksView from './views/BooksView.svelte'
   import AuthorsView from './views/AuthorsView.svelte'
@@ -16,7 +17,7 @@
   import NotesView from './views/NotesView.svelte'
   import ConfirmDialog from './components/ConfirmDialog.svelte'
   import { api, errorMessage } from './lib/api'
-  import { READABLE } from './lib/format'
+  import { READABLE, isComic } from './lib/format'
   import { library } from './lib/library.svelte'
   import { rise } from './lib/motion'
   import { nav, routeKey } from './lib/nav.svelte'
@@ -220,7 +221,11 @@
 {/if}
 
 {#if reading}
-  <EpubReader book={reading} startAt={readingAt} onclose={closeReader} />
+  {#if isComic(reading.format)}
+    <ComicReader book={reading} startAt={readingAt} onclose={closeReader} />
+  {:else}
+    <EpubReader book={reading} startAt={readingAt} onclose={closeReader} />
+  {/if}
 {/if}
 
 <ConfirmDialog />
