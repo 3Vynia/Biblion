@@ -53,6 +53,9 @@ pnpm e2e            # UI end-to-end tests (mock backend, see dev/)
 
 Set `BIBLION_DATA_DIR=/some/folder` to use a separate library while testing.
 
+On Linux the ambience sounds need the GStreamer plugins (on Arch:
+`gst-plugins-base` and `gst-plugins-good`).
+
 ## Tests
 
 ```bash
@@ -67,7 +70,8 @@ screen with "continue reading", a virtualised cover grid with filters,
 authors, series, subjects and collections, full book details, an
 EPUB/MOBI/AZW3 reader with themes, highlights, notes, bookmarks and a
 dictionary, a PDF reader (zoom, contents, search, night mode), a comic reader
-(spreads, manga, strip) and a Notes screen for the whole library.
+(spreads, manga, strip), a Notes screen for the whole library and a
+generative reading ambience (soundscapes, rain, fire, sea, sleep timer).
 
 ## License
 
