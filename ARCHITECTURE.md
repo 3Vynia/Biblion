@@ -146,9 +146,19 @@ apps/desktop/
   a limiter. Scenes are saved in `settings.json`. On Linux, WebKitGTK needs
   the GStreamer base and good plugins to play sound.
 
+- **Folder watching** (`src-tauri/src/watcher.rs`): `notify` follows the
+  library folders. Events are gathered until things are quiet for 4 s (at
+  most 60 s while a download keeps writing), reduced to the fewest folders
+  that cover them, and those folders get a light incremental scan (no
+  ANALYZE or FTS optimise). The UI hears `library-changed`. It can be turned
+  off in Settings.
+- **Authors from paths:** a book with no author gets one from
+  `Author_Name/Title.epub` or `Title-Author_Name.epub` when it reads like a
+  person's name (capitalised words, particles like "de", no genre words such
+  as "Ciencia Ficción"). Migration v5 applies this to existing libraries.
+
 ## To do / ideas
 
-- `notify` to watch folders and rescan on changes.
 - Cursor (keyset) pagination if jumps beyond 1M rows are ever needed.
 - Duplicates screen (`Library::duplicates`) and broken-files screen (`scan_error`).
 - Optional online metadata (Open Library).
