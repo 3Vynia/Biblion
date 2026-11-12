@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use biblion_core::dictionary::{Definition, DictionaryInfo};
+use biblion_core::health::{DuplicateGroup, DuplicateKind, HealthBook, HealthCounts, ProblemKind};
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
 use biblion_core::{
     Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, Book, BookId, BookQuery, BookStats, Format, BookSummary,
@@ -434,6 +435,78 @@ pub async fn set_cover(state: State<'_, AppState>, id: BookId, image: Vec<u8>) -
     }
     let lib = state.lib.clone();
     blocking(move || lib.set_cover(id, &image)).await
+}
+
+// ── Library health ───────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn duplicates(state: State<'_, AppState>, kind: DuplicateKind) -> CmdResult<Vec<DuplicateGroup>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.duplicates(kind)).await
+}
+
+#[tauri::command]
+pub async fn health_counts(state: State<'_, AppState>) -> CmdResult<HealthCounts> {
+    let lib = state.lib.clone();
+    blocking(move || lib.health_counts()).await
+}
+
+#[tauri::command]
+pub async fn problem_books(state: State<'_, AppState>, kind: ProblemKind, offset: u32, limit: u32) -> CmdResult<Page<HealthBook>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.problem_books(kind, offset, limit.clamp(1, MAX_PAGE))).await
+}
+
+/// Takes books out of the library; their files stay where they are.
+#[tauri::command]
+pub async fn forget_books(state: State<'_, AppState>, ids: Vec<BookId>) -> CmdResult<usize> {
+    let lib = state.lib.clone();
+    blocking(move || lib.remove_books(&ids)).await
+}
+
+#[derive(Debug, Serialize)]
+pub struct TrashReport {
+    pub removed: usize,
+    /// (path, reason) of files that could not be moved.
+    pub failed: Vec<(String, String)>,
+}
+
+/// Moves the books' files to the system trash (so they can be restored)
+/// and takes the books out of the library.
+#[tauri::command]
+pub async fn trash_books(state: State<'_, AppState>, ids: Vec<BookId>) -> CmdResult<TrashReport> {
+    let lib = state.lib.clone();
+    blocking(move || {
+        let mut gone = Vec::new();
+        let mut failed = Vec::new();
+        for id in ids {
+            let book = lib.get_book(id)?;
+            let path = PathBuf::from(&book.path);
+            if !path.exists() {
+                gone.push(id);
+                continue;
+            }
+            match trash::delete(&path) {
+                Ok(()) => gone.push(id),
+                Err(e) => failed.push((book.path, e.to_string())),
+            }
+        }
+        let removed = lib.remove_books(&gone)?;
+        tracing::info!(removed, failed = failed.len(), "moved books to the trash");
+        Ok(TrashReport { removed, failed })
+    })
+    .await
+}
+
+/// Reads these books' files again (after a download finished, say).
+#[tauri::command]
+pub async fn reread_books(state: State<'_, AppState>, ids: Vec<BookId>) -> CmdResult<ScanReport> {
+    let lib = state.lib.clone();
+    blocking(move || {
+        let roots = ids.iter().map(|&id| lib.get_book(id).map(|b| PathBuf::from(b.path))).collect::<biblion_core::Result<Vec<_>>>()?;
+        lib.scan(&ScanOptions { roots, force: true, light: true, threads: None }, &|_| {})
+    })
+    .await
 }
 
 // ── Dictionaries ─────────────────────────────────────────────────────────
