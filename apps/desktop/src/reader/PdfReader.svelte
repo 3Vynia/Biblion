@@ -17,6 +17,8 @@
   import { THEMES, type ThemeId } from './readerSettings'
   import SelectionMenu from './SelectionMenu.svelte'
   import { readerSettings } from './settingsStore.svelte'
+  import AmbiencePanel from '../components/AmbiencePanel.svelte'
+  import { ambience } from '../lib/ambience/store.svelte'
 
   interface Props {
     book: Book
@@ -34,7 +36,7 @@
   const OVERSCAN = 1
 
   type FitMode = 'width' | 'page' | 'custom'
-  type Panel = 'outline' | 'search' | 'view' | null
+  type Panel = 'outline' | 'search' | 'view' | 'ambience' | null
   interface OutlineItem {
     title: string
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -368,9 +370,12 @@
     api.setProgress(book.id, pageLocator(p), last ? p / last : 1, p >= last).catch((e) => console.error('saving progress failed', e))
   }
 
+  let lastPage = -1
   $effect(() => {
     void current
     if (untrack(() => status) !== 'ready') return
+    if (lastPage >= 0 && current !== lastPage) ambience.pageTurned()
+    lastPage = current
     dirty = true
     clearTimeout(saveTimer)
     saveTimer = setTimeout(flush, SAVE_DELAY_MS)
@@ -387,6 +392,7 @@
   // ── Loading ──────────────────────────────────────────────────────────────
   onMount(() => {
     window.addEventListener('keydown', onKey)
+    ambience.bookOpened()
     ;(async () => {
       await readerSettings.load()
       doc = await openPdf(book.id)
@@ -464,6 +470,9 @@
     <button class="icon" class:on={panel === 'search'} onclick={() => (panel = panel === 'search' ? null : 'search')} title="Search (Ctrl+F)" aria-label="Search in document"
       ><Icon name="search" size={18} /></button
     >
+    <button class="icon" class:on={panel === 'ambience'} class:playing={ambience.playing} onclick={() => (panel = panel === 'ambience' ? null : 'ambience')} title="Ambience" aria-label="Ambience"
+      ><Icon name="sound" size={18} /></button
+    >
     <button class="icon" class:on={panel === 'view'} onclick={() => (panel = panel === 'view' ? null : 'view')} title="View settings" aria-label="View settings"
       ><Icon name="settings" size={18} /></button
     >
@@ -518,6 +527,9 @@
           {:else}
             <p class="muted-text">This PDF has no table of contents.</p>
           {/if}
+        {:else if panel === 'ambience'}
+          <h3>Ambience</h3>
+          <AmbiencePanel compact />
         {:else if panel === 'search'}
           <h3>Search</h3>
           <form onsubmit={search}>
@@ -686,6 +698,10 @@
     font-size: 12px;
     color: var(--r-muted);
     font-variant-numeric: tabular-nums;
+  }
+
+  .icon.playing {
+    color: var(--r-link);
   }
 
   .zoom {

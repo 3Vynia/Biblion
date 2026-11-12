@@ -10,6 +10,8 @@
   import { pageFromLocator, pageLocator, spreadOf, spreads, wantsDouble } from './comicLayout'
   import { THEMES, type ComicDirection, type ComicFit, type ComicMode, type ComicSpread, type ThemeId } from './readerSettings'
   import { readerSettings } from './settingsStore.svelte'
+  import AmbiencePanel from '../components/AmbiencePanel.svelte'
+  import { ambience } from '../lib/ambience/store.svelte'
 
   interface Props {
     book: Book
@@ -29,6 +31,7 @@
   let direction = $state(1)
   let barsVisible = $state(true)
   let showSettings = $state(false)
+  let showAmbience = $state(false)
   let stageWidth = $state(0)
   let stageHeight = $state(0)
   let sliderValue = $state<number | null>(null)
@@ -57,9 +60,12 @@
     api.setProgress(book.id, pageLocator(p), last ? p / last : 1, p >= last).catch((e) => console.error('saving progress failed', e))
   }
 
+  let lastPage = -1
   $effect(() => {
     void page
     if (status !== 'ready') return
+    if (lastPage >= 0 && page !== lastPage) ambience.pageTurned()
+    lastPage = page
     dirty = true
     clearTimeout(saveTimer)
     saveTimer = setTimeout(flush, SAVE_DELAY_MS)
@@ -115,7 +121,7 @@
         goTo(count - 1)
         break
       case 'Escape':
-        if (showSettings) showSettings = false
+        if (showSettings || showAmbience) showSettings = showAmbience = false
         else onclose()
         break
       default:
@@ -173,6 +179,7 @@
 
   onMount(() => {
     window.addEventListener('keydown', onKey)
+    ambience.bookOpened()
     Promise.all([readerSettings.load(), api.comicPages(book.id)])
       .then(([, pages]) => {
         if (!pages.length) throw new Error('This comic has no pages.')
@@ -236,8 +243,16 @@
     </div>
     <button
       class="icon"
+      class:on={showAmbience}
+      class:playing={ambience.playing}
+      onclick={() => ((showAmbience = !showAmbience), (showSettings = false))}
+      title="Ambience"
+      aria-label="Ambience"><Icon name="sound" size={18} /></button
+    >
+    <button
+      class="icon"
       class:on={showSettings}
-      onclick={() => (showSettings = !showSettings)}
+      onclick={() => ((showSettings = !showSettings), (showAmbience = false))}
       title="Comic settings"
       aria-label="Comic settings"><Icon name="settings" size={18} /></button
     >
@@ -285,6 +300,12 @@
           </div>
         {/each}
       </div>
+    {/if}
+
+    {#if showAmbience}
+      <aside class="settings ambience-panel" aria-label="Ambience" in:rise={{ y: -6, duration: 180 }}>
+        <AmbiencePanel compact />
+      </aside>
     {/if}
 
     {#if showSettings}
@@ -570,6 +591,16 @@
     background: var(--r-chrome);
     border: 1px solid var(--r-border);
     box-shadow: 0 14px 40px rgb(0 0 0 / 0.35);
+  }
+
+  .ambience-panel {
+    width: 330px;
+    max-height: calc(100% - 20px);
+    overflow-y: auto;
+  }
+
+  .icon.playing {
+    color: var(--r-link);
   }
 
   .label {
