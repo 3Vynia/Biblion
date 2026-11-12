@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use biblion_core::dictionary::{Definition, DictionaryInfo};
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
 use biblion_core::{
-    Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, Book, BookId, BookQuery, BookStats, BookSummary,
+    Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, Book, BookId, BookQuery, BookStats, Format, BookSummary,
     Library, LibraryStats, NewAnnotation, Page, Shelf, TagEntry,
 };
 use serde::Serialize;
@@ -372,6 +372,25 @@ pub async fn list_annotations(state: State<'_, AppState>, query: AnnotationQuery
 pub async fn annotation_counts(state: State<'_, AppState>) -> CmdResult<(u64, u64)> {
     let lib = state.lib.clone();
     blocking(move || lib.annotation_counts()).await
+}
+
+// ── Covers ───────────────────────────────────────────────────────────────
+
+/// Books of a format that still have no cover (for background generation).
+#[tauri::command]
+pub async fn books_without_cover(state: State<'_, AppState>, format: Format, limit: u32) -> CmdResult<Vec<BookId>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.books_without_cover(format, limit.clamp(1, 500))).await
+}
+
+/// Stores a cover rendered by the UI (e.g. page 1 of a PDF). Returns its key.
+#[tauri::command]
+pub async fn set_cover(state: State<'_, AppState>, id: BookId, image: Vec<u8>) -> CmdResult<String> {
+    if image.is_empty() || image.len() > 16 * 1024 * 1024 {
+        return Err(CmdError::new("invalid_argument", "the cover image is empty or too large"));
+    }
+    let lib = state.lib.clone();
+    blocking(move || lib.set_cover(id, &image)).await
 }
 
 // ── Dictionaries ─────────────────────────────────────────────────────────
