@@ -13,9 +13,11 @@
     oncopy: () => void
     /** Only for short selections (a word or a short phrase). */
     ondefine?: () => void
+    /** Offer highlight colours and notes (not available everywhere yet). */
+    annotate?: boolean
   }
 
-  let { x, y, onhighlight, onnote, oncopy, ondefine }: Props = $props()
+  let { x, y, onhighlight, onnote, oncopy, ondefine, annotate = true }: Props = $props()
   // Keep it on screen; flip below the selection near the top edge.
   const below = $derived(y < 70)
 </script>
@@ -29,20 +31,24 @@
   aria-label="Selection"
   in:rise={{ y: below ? -6 : 6, scale: 0.94, duration: 180 }}
 >
-  {#each Object.entries(HIGHLIGHT_COLORS) as [id, c] (id)}
-    <button
-      class="swatch"
-      style:--c={c.value}
-      title="Highlight in {c.label.toLowerCase()}"
-      aria-label="Highlight in {c.label.toLowerCase()}"
-      onclick={() => onhighlight(id as HighlightColor)}
-    ></button>
-  {/each}
-  <span class="sep"></span>
+  {#if annotate}
+    {#each Object.entries(HIGHLIGHT_COLORS) as [id, c] (id)}
+      <button
+        class="swatch"
+        style:--c={c.value}
+        title="Highlight in {c.label.toLowerCase()}"
+        aria-label="Highlight in {c.label.toLowerCase()}"
+        onclick={() => onhighlight(id as HighlightColor)}
+      ></button>
+    {/each}
+    <span class="sep"></span>
+  {/if}
   {#if ondefine}
     <button class="action" onclick={ondefine} title="Look up in the dictionary"><Icon name="define" size={16} /> Define</button>
   {/if}
-  <button class="action" onclick={onnote} title="Highlight and add a note"><Icon name="note" size={16} /> Note</button>
+  {#if annotate}
+    <button class="action" onclick={onnote} title="Highlight and add a note"><Icon name="note" size={16} /> Note</button>
+  {/if}
   <button class="action" onclick={oncopy} title="Copy text"><Icon name="copy" size={15} /> Copy</button>
 </div>
 
