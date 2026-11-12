@@ -49,6 +49,7 @@
         },
         { section: 'favorites', label: 'Favourites', icon: 'heart', route: favorites, count: library.counts.favorites },
         { section: 'finished', label: 'Finished', icon: 'check', route: finished, count: library.counts.finished },
+        { section: 'stats', label: 'Stats', icon: 'chart', route: () => ({ name: 'stats' }) },
         {
           section: 'notes',
           label: 'Notes',

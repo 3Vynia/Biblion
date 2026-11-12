@@ -17,6 +17,8 @@ export interface UiSettings {
   scanOnStartup: boolean
   /** Ask Wiktionary when no offline dictionary knows a word. */
   onlineDictionary: boolean
+  /** Books to finish this year (0: no goal). */
+  readingGoal: number
 }
 
 export const DEFAULT_UI: UiSettings = {
@@ -28,6 +30,7 @@ export const DEFAULT_UI: UiSettings = {
   showCaptions: true,
   scanOnStartup: true,
   onlineDictionary: true,
+  readingGoal: 0,
 }
 
 /** Light / dark variants of each accent. */
@@ -58,6 +61,8 @@ export function normalizeUi(raw: unknown): UiSettings {
     showCaptions: bool(r.showCaptions, d.showCaptions),
     scanOnStartup: bool(r.scanOnStartup, d.scanOnStartup),
     onlineDictionary: bool(r.onlineDictionary, d.onlineDictionary),
+    readingGoal:
+      typeof r.readingGoal === 'number' && Number.isFinite(r.readingGoal) ? Math.min(1000, Math.max(0, Math.round(r.readingGoal))) : d.readingGoal,
   }
 }
 
