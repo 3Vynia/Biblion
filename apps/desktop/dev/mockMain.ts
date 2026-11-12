@@ -2,7 +2,7 @@
 // in-memory fake backend, so screens can be tested without the desktop app.
 // Open http://localhost:1420/dev/mock.html while `pnpm dev` is running.
 import { mockConvertFileSrc, mockIPC } from '@tauri-apps/api/mocks'
-import { handle } from './mockBackend'
+import { formatOf, handle } from './mockBackend'
 
 mockConvertFileSrc('linux')
 
@@ -17,7 +17,10 @@ internals.convertFileSrc = (path, scheme = 'asset') =>
 const realFetch = window.fetch.bind(window)
 window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-  if (url.startsWith('book://')) return realFetch('/dev/fixtures/sample.epub', init)
+  if (url.startsWith('book://')) {
+    const sample = formatOf(Number(url.split('/').pop())) === 'pdf' ? 'sample.pdf' : 'sample.epub'
+    return realFetch(`/dev/fixtures/${sample}`, init)
+  }
   // Never reach the real Wiktionary from tests: answer with a fixed entry.
   if (url.startsWith('https://en.wiktionary.org/')) {
     const word = decodeURIComponent(url.split('/').pop() ?? '')
