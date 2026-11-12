@@ -504,3 +504,31 @@ fn dictionaries_install_define_and_remove() {
     assert!(lib.define("faro").is_empty());
     assert!(src.join("es.ifo").exists(), "the original files are left alone");
 }
+
+#[test]
+fn upgrading_recomputes_title_sort_keys() {
+    let tmp = tempfile::tempdir().unwrap();
+    let books = tmp.path().join("books");
+    write_epub(&books.join("a.epub"), "Las (des)ventajas", "Some Author", 1);
+    write_epub(&books.join("b.epub"), "Saga 11", "Some Author", 2);
+    write_epub(&books.join("c.epub"), "Saga 5", "Some Author", 3);
+    let data = tmp.path().join("data");
+    {
+        let lib = Library::open(&data).unwrap();
+        scan(&lib, &books);
+    }
+    // Pretend the library was indexed by a version with the old keys.
+    {
+        let conn = rusqlite::Connection::open(data.join("library.db")).unwrap();
+        conn.execute_batch("UPDATE books SET sort_title = 'zzz' || title; PRAGMA user_version = 3;").unwrap();
+    }
+    let lib = Library::open(&data).unwrap();
+    let titles: Vec<String> = lib
+        .list_books(&BookQuery { sort: SortBy::Title, limit: 10, ..Default::default() })
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|b| b.title)
+        .collect();
+    assert_eq!(titles, ["Las (des)ventajas", "Saga 5", "Saga 11"]);
+}

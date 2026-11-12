@@ -155,7 +155,24 @@ ALTER TABLE bookmarks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX bookmarks_recent ON bookmarks(created_at DESC, id DESC);
 "#;
 
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
+/// v4: no schema change; title sort keys are recomputed (see `migrate`).
+const SCHEMA_V4: &str = "";
+
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4];
+
+/// Recomputes every title sort key, after the key format changed.
+fn recompute_sort_titles(tx: &Transaction) -> Result<()> {
+    let rows: Vec<(BookId, String)> = {
+        let mut stmt = tx.prepare("SELECT id, title FROM books")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<std::result::Result<_, _>>()?;
+        rows
+    };
+    let mut update = tx.prepare("UPDATE books SET sort_title = ?2 WHERE id = ?1")?;
+    for (id, title) in rows {
+        update.execute(params![id, sort_key(&title)])?;
+    }
+    Ok(())
+}
 
 /// Limits for annotation fields, against runaway selections.
 const MAX_ANNOTATION_TEXT: usize = 20_000;
@@ -200,6 +217,9 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(version) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
+        if i + 1 == 4 {
+            recompute_sort_titles(&tx)?;
+        }
         tx.pragma_update(None, "user_version", (i + 1) as i64)?;
         tx.commit()?;
     }
