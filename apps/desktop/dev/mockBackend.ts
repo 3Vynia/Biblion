@@ -40,6 +40,9 @@ const rows: Row[] = Array.from({ length: 3000 }, (_, i) => {
   }
 })
 const shelves: Shelf[] = [{ id: 1, name: 'To read', book_count: 0 }]
+
+/** Format of a mock book, so the harness can serve the right sample file. */
+export const formatOf = (id: number): Format | undefined => rows[id - 1]?.format
 const shelfBooks = new Map<number, Set<number>>([[1, new Set()]])
 
 const cmp = (a: string | number | null, b: string | number | null) =>
@@ -278,6 +281,15 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       })
       return { items, total: list.length, offset: q.offset }
     }
+    case 'set_cover': {
+      const row = rows[(args.id as number) - 1]
+      row.has_cover = true
+      return `cover-${row.id}`
+    }
+    case 'books_without_cover':
+      // Only when a test asks for it: otherwise every test would render 375 covers.
+      if (!(window as unknown as { __mockCoverQueue?: boolean }).__mockCoverQueue) return []
+      return rows.filter((r) => r.format === args.format && !r.has_cover).slice(0, args.limit as number).map((r) => r.id)
     case 'comic_pages':
       return Array.from({ length: 7 }, (_, i) => `page-${String(i + 1).padStart(2, '0')}.jpg`)
     case 'list_dictionaries':
