@@ -7,7 +7,7 @@
   import type { Annotation, Book, NewAnnotation } from '../lib/types'
   import Icon from '../components/Icon.svelte'
   import { confirm } from '../lib/dialog.svelte'
-  import { DEFAULT_HIGHLIGHT, annotationsToMarkdown, highlightValue, type HighlightColor } from '../lib/highlights'
+  import { DEFAULT_HIGHLIGHT, HIGHLIGHT_COLORS, annotationsToMarkdown, highlightValue, type HighlightColor } from '../lib/highlights'
   import SelectionMenu from './SelectionMenu.svelte'
   import AnnotationCard from './AnnotationCard.svelte'
   import NotesPanel from './NotesPanel.svelte'
@@ -189,6 +189,12 @@
 
   async function recolor(a: Annotation, color: HighlightColor) {
     if (a.color === color) return
+    const ok = await confirm({
+      title: `Change this highlight to ${HIGHLIGHT_COLORS[color].label.toLowerCase()}?`,
+      message: 'Its note and place in the book stay the same.',
+      confirmLabel: 'Change colour',
+    })
+    if (!ok) return
     await api.updateAnnotation(a.id, null, color)
     replace({ ...a, color })
     view.addAnnotation({ value: a.locator }) // redraws with the new colour
