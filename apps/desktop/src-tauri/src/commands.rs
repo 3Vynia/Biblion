@@ -374,6 +374,15 @@ pub async fn annotation_counts(state: State<'_, AppState>) -> CmdResult<(u64, u6
     blocking(move || lib.annotation_counts()).await
 }
 
+// ── Comics ───────────────────────────────────────────────────────────────
+
+/// Page names of a CBZ/CBR in reading order (images load via `comic://`).
+#[tauri::command]
+pub async fn comic_pages(state: State<'_, AppState>, id: BookId) -> CmdResult<Vec<String>> {
+    let lib = state.lib.clone();
+    blocking(move || lib.comic_pages(id)).await
+}
+
 // ── Covers ───────────────────────────────────────────────────────────────
 
 /// Books of a format that still have no cover (for background generation).
