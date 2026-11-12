@@ -278,6 +278,8 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       })
       return { items, total: list.length, offset: q.offset }
     }
+    case 'comic_pages':
+      return Array.from({ length: 7 }, (_, i) => `page-${String(i + 1).padStart(2, '0')}.jpg`)
     case 'list_dictionaries':
       return dictionaries
     case 'define': {
