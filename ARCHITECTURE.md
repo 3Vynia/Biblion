@@ -138,6 +138,13 @@ apps/desktop/
   `.tar.gz` or `.tar.xz` (FreeDict). dictzip files are read chunk by chunk.
   When nothing is found offline the UI can ask Wiktionary (only the word is
   sent; it can be turned off). Definitions are always shown as plain text.
+- **Ambience** (`src/lib/ambience`): every sound is generated live with Web
+  Audio, so there are no audio files to ship. The soundscape plays slow
+  chords and sparse bell notes in a mode (read, focus, relax, sleep) that
+  follows the time of day and answers page turns; textures (rain, fire, sea,
+  noise…) are shaped noise. Everything goes through a gentle high shelf and
+  a limiter. Scenes are saved in `settings.json`. On Linux, WebKitGTK needs
+  the GStreamer base and good plugins to play sound.
 
 ## To do / ideas
 
