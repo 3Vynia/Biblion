@@ -21,6 +21,7 @@ import type {
   Page,
   ScanEvent,
   ScanReport,
+  ReadingStats,
   DuplicateGroup,
   DuplicateKind,
   HealthBook,
@@ -87,6 +88,9 @@ export const api = {
   getUiSettings: () => invoke<unknown>('get_ui_settings'),
   getAmbienceSettings: () => invoke<unknown>('get_ambience_settings'),
   getWatchFolders: () => invoke<boolean>('get_watch_folders'),
+  logReading: (id: BookId, day: string, seconds: number, pages: number) => invoke<void>('log_reading', { id, day, seconds, pages }),
+  readingStats: (from: string, to: string, finishedFrom: number, finishedTo: number) =>
+    invoke<ReadingStats>('reading_stats', { from, to, finishedFrom, finishedTo }),
   duplicates: (kind: DuplicateKind) => invoke<DuplicateGroup[]>('duplicates', { kind }),
   healthCounts: () => invoke<HealthCounts>('health_counts'),
   problemBooks: (kind: ProblemKind, offset: number, limit: number) => invoke<Page<HealthBook>>('problem_books', { kind, offset, limit }),

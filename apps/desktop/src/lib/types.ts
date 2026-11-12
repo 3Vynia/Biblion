@@ -235,3 +235,20 @@ export interface TrashReport {
   /** [path, reason] */
   failed: [string, string][]
 }
+
+// ── Reading statistics (crates/biblion-core/src/stats.rs) ──
+
+export interface DayReading {
+  /** Local date, YYYY-MM-DD. */
+  day: string
+  seconds: number
+  pages: number
+}
+
+export interface ReadingStats {
+  days: DayReading[]
+  finished: { book: BookSummary; finished_at: number }[]
+  top_books: { book: BookSummary; seconds: number }[]
+  top_authors: { name: string; seconds: number }[]
+  books_read: number
+}
