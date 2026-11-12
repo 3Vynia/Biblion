@@ -4,11 +4,12 @@
 mod commands;
 mod protocols;
 mod settings;
+mod watcher;
 
 use std::sync::{Arc, Mutex};
 
 use biblion_core::Library;
-use tauri::{Manager, Runtime, UriSchemeContext, UriSchemeResponder};
+use tauri::{Emitter, Manager, Runtime, UriSchemeContext, UriSchemeResponder};
 
 use commands::AppState;
 use settings::Settings;
@@ -52,10 +53,15 @@ fn main() {
                 None => app.path().app_data_dir()?,
             };
             tracing::info!("library data: {}", data_dir.display());
-            let lib = Library::open(&data_dir)?;
+            let lib = Arc::new(Library::open(&data_dir)?);
             let settings_path = data_dir.join("settings.json");
             let settings = Settings::load(&settings_path);
-            app.manage(AppState { lib: Arc::new(lib), settings: Mutex::new(settings), settings_path });
+            let handle = app.handle().clone();
+            let watcher = watcher::FolderWatcher::start(lib.clone(), move |report| {
+                let _ = handle.emit("library-changed", report);
+            });
+            watcher.set_roots(settings.watched_roots());
+            app.manage(AppState { lib, settings: Mutex::new(settings), settings_path, watcher });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -67,6 +73,8 @@ fn main() {
             commands::get_ui_settings,
             commands::set_ui_settings,
             commands::get_ambience_settings,
+            commands::get_watch_folders,
+            commands::set_watch_folders,
             commands::set_ambience_settings,
             commands::data_dir,
             commands::analyze_book,

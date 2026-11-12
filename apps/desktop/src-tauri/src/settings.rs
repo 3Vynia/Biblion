@@ -20,6 +20,19 @@ pub struct Settings {
     pub ui: Option<serde_json::Value>,
     /// Reading ambience (soundscape, textures, scenes), owned by the UI.
     pub ambience: Option<serde_json::Value>,
+    /// Rescan the library folders when files change (on unless turned off).
+    pub watch_folders: Option<bool>,
+}
+
+impl Settings {
+    pub fn watching(&self) -> bool {
+        self.watch_folders.unwrap_or(true)
+    }
+
+    /// The folders the watcher should follow.
+    pub fn watched_roots(&self) -> Vec<PathBuf> {
+        if self.watching() { self.roots.clone() } else { Vec::new() }
+    }
 }
 
 impl Settings {
@@ -107,7 +120,7 @@ mod tests {
         let path = tmp.path().join("settings.json");
         assert_eq!(Settings::load(&path), Settings::default());
 
-        let s = Settings { roots: vec![PathBuf::from("/books")], reader: Some(serde_json::json!({ "theme": "sepia" })), ui: None, ambience: Some(serde_json::json!({ "master": 0.5 })) };
+        let s = Settings { roots: vec![PathBuf::from("/books")], reader: Some(serde_json::json!({ "theme": "sepia" })), ui: None, watch_folders: Some(false), ambience: Some(serde_json::json!({ "master": 0.5 })) };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
 

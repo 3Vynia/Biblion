@@ -19,6 +19,7 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::settings::Settings;
+use crate::watcher::FolderWatcher;
 
 /// Upper bound for one listing page (the grid asks for 200).
 const MAX_PAGE: u32 = 1000;
@@ -29,6 +30,7 @@ pub struct AppState {
     pub lib: Arc<Library>,
     pub settings: Mutex<Settings>,
     pub settings_path: PathBuf,
+    pub watcher: FolderWatcher,
 }
 
 /// Error sent to the UI: a stable `code` to branch on plus a readable message.
@@ -84,7 +86,22 @@ fn update_settings<T>(state: &AppState, f: impl FnOnce(&mut Settings) -> Result<
     f(&mut next).map_err(|m| CmdError::new("invalid_folder", m))?;
     next.save(&state.settings_path).map_err(|e| CmdError::new("io", format!("cannot save settings: {e}")))?;
     *settings = next;
+    state.watcher.set_roots(settings.watched_roots());
     Ok(settings.roots.clone())
+}
+
+#[tauri::command]
+pub fn get_watch_folders(state: State<'_, AppState>) -> bool {
+    state.settings.lock().unwrap().watching()
+}
+
+#[tauri::command]
+pub fn set_watch_folders(state: State<'_, AppState>, on: bool) -> CmdResult<()> {
+    update_settings(&state, |s| {
+        s.watch_folders = Some(on);
+        Ok(())
+    })?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -184,7 +201,7 @@ pub async fn scan(state: State<'_, AppState>, force: bool, on_event: Channel<Sca
                 let _ = on_event.send(ev);
             }
         };
-        let report = lib.scan(&ScanOptions { roots, force, threads: None }, &on_event)?;
+        let report = lib.scan(&ScanOptions { roots, force, threads: None, light: false }, &on_event)?;
         tracing::info!(
             found = report.found,
             added = report.added,

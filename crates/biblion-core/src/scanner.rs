@@ -37,6 +37,10 @@ pub struct ScanOptions {
     pub threads: Option<usize>,
     /// Reprocess everything even if unchanged.
     pub force: bool,
+    /// Skip the index upkeep (ANALYZE, FTS optimise) after the scan. For the
+    /// small, frequent scans of watched folders.
+    #[serde(default)]
+    pub light: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -295,7 +299,7 @@ pub fn scan(
         return Err(Error::Cancelled);
     }
     db::gc_orphans(conn)?;
-    if report.added + report.updated > 0 {
+    if report.added + report.updated > 0 && !opts.light {
         // Planner statistics + compact the FTS index after changes.
         conn.execute_batch("ANALYZE; INSERT INTO books_fts(books_fts) VALUES('optimize');")?;
     }
