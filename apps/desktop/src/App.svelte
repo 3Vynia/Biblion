@@ -13,6 +13,7 @@
   import SeriesView from './views/SeriesView.svelte'
   import CollectionsView from './views/CollectionsView.svelte'
   import FormatsView from './views/FormatsView.svelte'
+  import HealthView from './views/HealthView.svelte'
   import SettingsView from './views/SettingsView.svelte'
   import SubjectsView from './views/SubjectsView.svelte'
   import NotesView from './views/NotesView.svelte'
@@ -224,6 +225,8 @@
               <CollectionsView />
             {:else if route.name === 'formats'}
               <FormatsView />
+            {:else if route.name === 'health'}
+              <HealthView />
             {:else if route.name === 'settings'}
               <SettingsView {roots} onrootschange={(r) => (roots = r)} />
             {/if}

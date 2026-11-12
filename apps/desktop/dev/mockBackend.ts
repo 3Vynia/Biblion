@@ -1,6 +1,18 @@
 // In-memory imitation of the Tauri commands in src-tauri/src/commands.rs.
 // Filters and sort orders follow crates/biblion-core/src/db.rs.
-import type { Annotation, AnnotationQuery, Book, BookQuery, BookSummary, Format, NewAnnotation, Shelf } from '../src/lib/types'
+import type {
+  Annotation,
+  AnnotationQuery,
+  Book,
+  BookQuery,
+  BookSummary,
+  DuplicateGroup,
+  DuplicateKind,
+  Format,
+  HealthBook,
+  NewAnnotation,
+  Shelf,
+} from '../src/lib/types'
 
 const FORMATS: Format[] = ['epub', 'epub', 'epub', 'pdf', 'mobi', 'azw3', 'cbz', 'cbr']
 const WORDS = ['Abyss', 'Garden', 'Storm', 'River', 'Night', 'Island', 'Wolf', 'Silence', 'Border', 'Mirror', 'Labyrinth', 'Salt']
@@ -133,6 +145,53 @@ let readerSettings: unknown = null
 let uiSettings: unknown = null
 let ambienceSettings: unknown = null
 let watchFolders = true
+
+// Library health: a few duplicate groups, unreadable and missing books.
+const forgotten = new Set<number>()
+const unreadable = new Map<number, string>(
+  Array.from({ length: 30 }, (_, i) => [100 + i, i % 3 ? 'corrupt or invalid file (zip): invalid Zip archive: Could not find EOCD' : 'corrupt or invalid file (epub): corrupt deflate stream']),
+)
+const missingIds = new Set([200, 201, 202, 203, 204])
+const IDENTICAL = [[1, 2], [3, 4, 5]]
+const SAME_BOOK = [[10, 11]]
+
+function healthBook(id: number): HealthBook {
+  const r = rows[id - 1]
+  return {
+    id,
+    title: r.title,
+    authors: r.authors,
+    format: r.format,
+    cover_key: null,
+    path: `/books/${r.authors[0]}/${id % 2 ? 'copies/' : ''}${r.title}.${r.format}`,
+    size: 400_000 + ((id * 7919) % 900_000),
+    added_at: r.added_at,
+    progress: r.progress,
+    annotations: id % 4,
+    favorite: r.favorite,
+    error: unreadable.get(id) ?? null,
+    missing: missingIds.has(id),
+  }
+}
+
+function duplicateGroups(kind: DuplicateKind): DuplicateGroup[] {
+  return (kind === 'identical' ? IDENTICAL : SAME_BOOK)
+    .map((ids) => ids.filter((id) => !forgotten.has(id)).map(healthBook))
+    .filter((books) => books.length > 1)
+    .map((books) => {
+      if (kind === 'identical') books.forEach((b) => (b.size = books[0].size))
+      const total = books.reduce((n, b) => n + b.size, 0)
+      return { kind, books, wasted: total - Math.max(...books.map((b) => b.size)) }
+    })
+}
+
+function forget(ids: number[]) {
+  for (const id of ids) {
+    forgotten.add(id)
+    unreadable.delete(id)
+    missingIds.delete(id)
+  }
+}
 declare global {
   interface Window {
     __calls: { cmd: string; args: Record<string, unknown> }[]
@@ -246,6 +305,31 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       return null
     case 'set_progress':
       return null
+    case 'duplicates':
+      return duplicateGroups(args.kind as DuplicateKind)
+    case 'health_counts':
+      return { unreadable: unreadable.size, missing: missingIds.size }
+    case 'problem_books': {
+      const ids = [...(args.kind === 'missing' ? missingIds : unreadable.keys())]
+      const offset = args.offset as number
+      return { items: ids.slice(offset, offset + (args.limit as number)).map(healthBook), total: ids.length, offset }
+    }
+    case 'forget_books':
+      forget(args.ids as number[])
+      return (args.ids as number[]).length
+    case 'forget_missing': {
+      const n = missingIds.size
+      forget([...missingIds])
+      return n
+    }
+    case 'trash_books':
+      forget(args.ids as number[])
+      return { removed: (args.ids as number[]).length, failed: [] }
+    case 'reread_books': {
+      const ids = (args.ids as number[] | null) ?? [...unreadable.keys()]
+      ids.forEach((id) => unreadable.delete(id))
+      return { found: ids.length, unchanged: 0, added: 0, updated: ids.length, missing: 0, errors: 0, covers: 0, elapsed_ms: 40, error_samples: [] }
+    }
     case 'get_watch_folders':
       return watchFolders
     case 'set_watch_folders':

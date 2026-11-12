@@ -72,6 +72,7 @@
           count: library.custom.length || null,
         },
         { section: 'formats', label: 'Formats', icon: 'file', route: () => ({ name: 'formats' }) },
+        { section: 'health', label: 'Library health', icon: 'pulse', route: () => ({ name: 'health' }) },
       ],
     },
   ])

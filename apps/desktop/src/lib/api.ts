@@ -21,6 +21,12 @@ import type {
   Page,
   ScanEvent,
   ScanReport,
+  DuplicateGroup,
+  DuplicateKind,
+  HealthBook,
+  HealthCounts,
+  ProblemKind,
+  TrashReport,
   Shelf,
   TagEntry,
 } from './types'
@@ -81,6 +87,16 @@ export const api = {
   getUiSettings: () => invoke<unknown>('get_ui_settings'),
   getAmbienceSettings: () => invoke<unknown>('get_ambience_settings'),
   getWatchFolders: () => invoke<boolean>('get_watch_folders'),
+  duplicates: (kind: DuplicateKind) => invoke<DuplicateGroup[]>('duplicates', { kind }),
+  healthCounts: () => invoke<HealthCounts>('health_counts'),
+  problemBooks: (kind: ProblemKind, offset: number, limit: number) => invoke<Page<HealthBook>>('problem_books', { kind, offset, limit }),
+  /** Takes books out of the library; files stay on disk. */
+  forgetBooks: (ids: BookId[]) => invoke<number>('forget_books', { ids }),
+  forgetMissing: () => invoke<number>('forget_missing'),
+  /** Moves the files to the system trash and takes the books out. */
+  trashBooks: (ids: BookId[]) => invoke<TrashReport>('trash_books', { ids }),
+  /** Reads the files again; without ids, every unreadable book. */
+  rereadBooks: (ids?: BookId[]) => invoke<ScanReport>('reread_books', { ids: ids ?? null }),
   setWatchFolders: (on: boolean) => invoke<void>('set_watch_folders', { on }),
   /** Called after the backend rescanned watched folders that changed. */
   onLibraryChanged: (cb: (report: ScanReport) => void) => listen<ScanReport>('library-changed', (e) => cb(e.payload)),
