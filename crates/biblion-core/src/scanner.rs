@@ -211,10 +211,12 @@ pub fn scan(
     }
 
     // 3. Missing files (only inside the scanned roots)
-    let roots: Vec<String> = opts.roots.iter().map(|r| path_string(r)).collect();
+    // A path is inside the scan when one of its ancestors (or itself) is a
+    // root; looked up in a set, since a re-read can pass thousands of files.
+    let roots: HashSet<&Path> = opts.roots.iter().map(PathBuf::as_path).collect();
     let gone: Vec<i64> = known
         .iter()
-        .filter(|(p, k)| !k.missing && !seen.contains(p.as_str()) && roots.iter().any(|r| Path::new(p.as_str()).starts_with(r)))
+        .filter(|(p, k)| !k.missing && !seen.contains(p.as_str()) && Path::new(p.as_str()).ancestors().any(|a| roots.contains(a)))
         .map(|(_, k)| k.id)
         .collect();
     report.missing = gone.len();
