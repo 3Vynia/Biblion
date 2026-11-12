@@ -6,6 +6,10 @@ export type FontId = 'publisher' | 'serif' | 'sans' | 'mono'
 export type Flow = 'paginated' | 'scrolled'
 export type Spread = 'auto' | 'single'
 export type Margin = 'narrow' | 'normal' | 'wide'
+export type ComicMode = 'pages' | 'strip'
+export type ComicFit = 'screen' | 'width' | 'height'
+export type ComicSpread = 'auto' | 'single'
+export type ComicDirection = 'ltr' | 'rtl'
 
 export interface ReaderSettings {
   theme: ThemeId
@@ -19,6 +23,12 @@ export interface ReaderSettings {
   flow: Flow
   /** `auto` shows two pages side by side when the window is wide enough. */
   spread: Spread
+  /** Comics: one or two pages at a time, or a continuous vertical strip. */
+  comicMode: ComicMode
+  comicFit: ComicFit
+  comicSpread: ComicSpread
+  /** `rtl` for manga: pages and arrows run right to left. */
+  comicDirection: ComicDirection
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -31,6 +41,10 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   hyphenate: true,
   flow: 'paginated',
   spread: 'auto',
+  comicMode: 'pages',
+  comicFit: 'screen',
+  comicSpread: 'auto',
+  comicDirection: 'ltr',
 }
 
 export const FONT_SIZE = { min: 60, max: 250, step: 10 }
@@ -86,6 +100,10 @@ export function normalizeSettings(raw: unknown): ReaderSettings {
     hyphenate: typeof r.hyphenate === 'boolean' ? r.hyphenate : d.hyphenate,
     flow: oneOf(r.flow, ['paginated', 'scrolled'] as const, d.flow),
     spread: oneOf(r.spread, ['auto', 'single'] as const, d.spread),
+    comicMode: oneOf(r.comicMode, ['pages', 'strip'] as const, d.comicMode),
+    comicFit: oneOf(r.comicFit, ['screen', 'width', 'height'] as const, d.comicFit),
+    comicSpread: oneOf(r.comicSpread, ['auto', 'single'] as const, d.comicSpread),
+    comicDirection: oneOf(r.comicDirection, ['ltr', 'rtl'] as const, d.comicDirection),
   }
 }
 
