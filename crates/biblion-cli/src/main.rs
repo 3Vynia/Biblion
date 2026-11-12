@@ -111,7 +111,7 @@ fn main() -> Result<()> {
     match cli.cmd {
         Cmd::Scan { roots, force, threads } => {
             let roots = roots.into_iter().map(|r| r.canonicalize()).collect::<std::io::Result<Vec<_>>>()?;
-            let opts = ScanOptions { roots, threads, force };
+            let opts = ScanOptions { roots, threads, force, light: false };
             let report = lib.scan(&opts, &|ev| match ev {
                 ScanEvent::Walking { found } => eprint!("\rWalking… {found} files   "),
                 ScanEvent::Processing { done, total } => eprint!("\rProcessing {done}/{total}   "),
