@@ -23,6 +23,7 @@ use tauri::State;
 
 use crate::settings::Settings;
 use crate::backup::{self, AutoBackup, BackupSummary};
+use crate::music::{self, MusicLibrary};
 use crate::watcher::FolderWatcher;
 
 /// Upper bound for one listing page (the grid asks for 200).
@@ -35,6 +36,8 @@ pub struct AppState {
     pub settings: Mutex<Settings>,
     pub settings_path: PathBuf,
     pub watcher: FolderWatcher,
+    /// Tracks of the music folder's last listing (served by `music://`).
+    pub music: Mutex<Vec<PathBuf>>,
 }
 
 /// Error sent to the UI: a stable `code` to branch on plus a readable message.
@@ -438,6 +441,52 @@ pub async fn set_cover(state: State<'_, AppState>, id: BookId, image: Vec<u8>) -
     }
     let lib = state.lib.clone();
     blocking(move || lib.set_cover(id, &image)).await
+}
+
+// ── Music ────────────────────────────────────────────────────────────────
+
+async fn list_music(state: &AppState, folder: Option<PathBuf>) -> CmdResult<MusicLibrary> {
+    let Some(folder) = folder else {
+        state.music.lock().unwrap().clear();
+        return Ok(MusicLibrary::default());
+    };
+    let (files, lib) = tauri::async_runtime::spawn_blocking(move || {
+        let files = music::list(&folder);
+        let lib = music::describe(&folder, &files);
+        (files, lib)
+    })
+    .await
+    .map_err(|e| CmdError::new("internal", e.to_string()))?;
+    *state.music.lock().unwrap() = files;
+    Ok(lib)
+}
+
+/// Lists the music folder (again: files may have changed since).
+#[tauri::command]
+pub async fn get_music(state: State<'_, AppState>) -> CmdResult<MusicLibrary> {
+    let folder = state.settings.lock().unwrap().music_folder.clone();
+    list_music(state.inner(), folder).await
+}
+
+/// Sets (or, with no path, forgets) the music folder and lists it.
+#[tauri::command]
+pub async fn set_music_folder(state: State<'_, AppState>, path: Option<PathBuf>) -> CmdResult<MusicLibrary> {
+    let folder = match path {
+        Some(p) => {
+            let p = p.canonicalize().map_err(|e| CmdError::new("invalid_folder", format!("Cannot open {}: {e}", p.display())))?;
+            if !p.is_dir() {
+                return Err(CmdError::new("invalid_folder", format!("{} is not a folder", p.display())));
+            }
+            Some(p)
+        }
+        None => None,
+    };
+    let chosen = folder.clone();
+    update_settings(&state, move |s| {
+        s.music_folder = chosen;
+        Ok(())
+    })?;
+    list_music(state.inner(), folder).await
 }
 
 // ── Backups ──────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@
 //! - `book://localhost/<book_id>`: the book file itself, for the readers.
 //!   Supports `Range` requests, so pdf.js can read large PDFs piece by piece.
 //! - `comic://localhost/<book_id>/<page>`: one page image of a CBZ/CBR.
+//! - `music://localhost/<n>`: track n of the music folder's last listing
+//!   (see `music.rs`), for the ambience.
 //!
 //! On Windows the web view sees them as `http://thumb.localhost/…`; the
 //! request path is the same on every platform. Only database ids and
@@ -98,17 +100,31 @@ pub fn book_file(lib: &Library, path: &str, range: Option<&str>) -> HttpResponse
         Err(biblion_core::Error::NotFound(_)) => return plain(StatusCode::NOT_FOUND, "book not found"),
         Err(e) => return plain(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
+    serve_file(std::path::Path::new(&book.path), mime_type(book.format), range)
+}
+
+/// A track of the music folder (None: not in the current listing).
+pub fn music_track(path: Option<&std::path::Path>, range: Option<&str>) -> HttpResponse {
+    match path {
+        Some(p) => serve_file(p, crate::music::audio_type(p).unwrap_or("application/octet-stream"), range),
+        None => plain(StatusCode::NOT_FOUND, "no such track"),
+    }
+}
+
+/// Streams a file, whole or the requested byte range (206), with headers
+/// that let the web view read it from another origin (pdf.js, Web Audio).
+pub fn serve_file(path: &std::path::Path, content_type: &str, range: Option<&str>) -> HttpResponse {
     let io_error = |e: std::io::Error| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            plain(StatusCode::NOT_FOUND, "the book file is missing from disk")
+            plain(StatusCode::NOT_FOUND, "the file is missing from disk")
         } else {
-            plain(StatusCode::INTERNAL_SERVER_ERROR, &format!("cannot read the book file: {e}"))
+            plain(StatusCode::INTERNAL_SERVER_ERROR, &format!("cannot read the file: {e}"))
         }
     };
     let response = |status: StatusCode| {
         Response::builder()
             .status(status)
-            .header(header::CONTENT_TYPE, mime_type(book.format))
+            .header(header::CONTENT_TYPE, content_type)
             .header(header::CACHE_CONTROL, "no-store")
             .header(header::ACCEPT_RANGES, "bytes")
             .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
@@ -116,12 +132,12 @@ pub fn book_file(lib: &Library, path: &str, range: Option<&str>) -> HttpResponse
     };
 
     let Some(range) = range else {
-        return match fs::read(&book.path) {
+        return match fs::read(path) {
             Ok(bytes) => response(StatusCode::OK).body(bytes).unwrap(),
             Err(e) => io_error(e),
         };
     };
-    let mut file = match File::open(&book.path) {
+    let mut file = match File::open(path) {
         Ok(f) => f,
         Err(e) => return io_error(e),
     };

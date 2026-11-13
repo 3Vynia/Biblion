@@ -21,8 +21,8 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: thumb: http://thumb.localhost comic: http://comic.localhost book: http://book.localhost; font-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://en.wiktionary.org ipc: http://ipc.localhost book: http://book.localhost blob: data:; frame-src 'self' blob:; worker-src 'self' blob:",
-      "devCsp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: thumb: http://thumb.localhost comic: http://comic.localhost book: http://book.localhost; font-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://en.wiktionary.org ipc: http://ipc.localhost book: http://book.localhost blob: data: ws://localhost:1420; frame-src 'self' blob:; worker-src 'self' blob:"
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: thumb: http://thumb.localhost comic: http://comic.localhost book: http://book.localhost; font-src 'self' data: blob:; media-src 'self' data: blob: music: http://music.localhost; connect-src 'self' https://en.wiktionary.org ipc: http://ipc.localhost book: http://book.localhost blob: data:; frame-src 'self' blob:; worker-src 'self' blob:",
+      "devCsp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' blob:; img-src 'self' data: blob: thumb: http://thumb.localhost comic: http://comic.localhost book: http://book.localhost; font-src 'self' data: blob:; media-src 'self' data: blob: music: http://music.localhost; connect-src 'self' https://en.wiktionary.org ipc: http://ipc.localhost book: http://book.localhost blob: data: ws://localhost:1420; frame-src 'self' blob:; worker-src 'self' blob:"
     }
   },
   "bundle": {
