@@ -3,6 +3,7 @@
 
 mod backup;
 mod commands;
+mod music;
 mod protocols;
 mod settings;
 mod watcher;
@@ -47,6 +48,14 @@ fn main() {
         .register_asynchronous_uri_scheme_protocol("thumb", file_scheme(protocols::thumbnail))
         .register_asynchronous_uri_scheme_protocol("book", file_scheme(protocols::book_file))
         .register_asynchronous_uri_scheme_protocol("comic", file_scheme(protocols::comic_page))
+        .register_asynchronous_uri_scheme_protocol("music", |ctx, request, responder| {
+            // Only tracks of the last listing: the path never comes from the page.
+            let track = request.uri().path().trim_start_matches('/').parse::<usize>().ok().and_then(|i| {
+                ctx.app_handle().try_state::<AppState>().and_then(|s| s.music.lock().unwrap().get(i).cloned())
+            });
+            let range = request.headers().get(tauri::http::header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_owned);
+            tauri::async_runtime::spawn_blocking(move || responder.respond(protocols::music_track(track.as_deref(), range.as_deref())));
+        })
         .setup(|app| {
             // BIBLION_DATA_DIR lets development and testing use a separate library.
             let data_dir = match std::env::var_os("BIBLION_DATA_DIR") {
@@ -71,7 +80,7 @@ fn main() {
                     Err(e) => tracing::warn!("automatic backup failed: {e}"),
                 });
             }
-            app.manage(AppState { lib, settings: Mutex::new(settings), settings_path, watcher });
+            app.manage(AppState { lib, settings: Mutex::new(settings), settings_path, watcher, music: Mutex::new(Vec::new()) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -83,6 +92,8 @@ fn main() {
             commands::get_ui_settings,
             commands::set_ui_settings,
             commands::get_ambience_settings,
+            commands::get_music,
+            commands::set_music_folder,
             commands::get_watch_folders,
             commands::set_watch_folders,
             commands::set_ambience_settings,
