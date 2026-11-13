@@ -21,6 +21,7 @@
   import { ambience } from '../lib/ambience/store.svelte'
   import { rangeFill } from '../lib/rangeFill'
   import { readingLog, trackReading } from '../lib/readingLog'
+  import { handleGlobalKey, plain, typing } from '../lib/shortcuts.svelte'
 
   interface Props {
     book: Book
@@ -57,6 +58,7 @@
   let current = $state(0)
   let panel = $state<Panel>(null)
   let barsVisible = $state(true)
+  let pageField = $state<HTMLInputElement>()
   let outline = $state<OutlineItem[]>([])
   let scroller = $state<HTMLDivElement>()
   let viewWidth = $state(0)
@@ -235,25 +237,39 @@
     zoomStep(e.deltaY < 0 ? 1 : -1)
   }
 
+  const togglePanel = (p: Exclude<Panel, null>) => {
+    panel = panel === p ? null : p
+    barsVisible = true
+  }
+
   function onKey(e: KeyboardEvent) {
+    if (handleGlobalKey(e)) return
     if (status !== 'ready' || !scroller) return
-    const target = e.target as HTMLElement | null
-    if (target?.closest?.('input, select, textarea')) {
+    if (typing(e)) {
       if (e.key === 'Escape') panel = null
       return
     }
     const ctrl = e.ctrlKey || e.metaKey
+    const letter = plain(e) ? e.key.toLowerCase() : ''
     if (ctrl && (e.key === '=' || e.key === '+')) zoomStep(1)
     else if (ctrl && e.key === '-') zoomStep(-1)
     else if (ctrl && e.key === '0') zoomTo('width')
     else if (ctrl && e.key === 'f') panel = 'search'
+    else if (ctrl || e.altKey) return
     else if (e.key === 'PageDown' || (e.key === ' ' && !e.shiftKey)) scroller.scrollBy({ top: viewHeight - 60 })
     else if (e.key === 'PageUp' || (e.key === ' ' && e.shiftKey)) scroller.scrollBy({ top: -(viewHeight - 60) })
-    else if (e.key === 'ArrowRight') goToPage(current + 1)
-    else if (e.key === 'ArrowLeft') goToPage(current - 1)
+    else if (e.key === 'ArrowRight' || e.key === ']') goToPage(current + 1)
+    else if (e.key === 'ArrowLeft' || e.key === '[') goToPage(current - 1)
     else if (e.key === 'Home') goToPage(0)
     else if (e.key === 'End') goToPage(count - 1)
-    else if (e.key === 'Escape') {
+    else if (letter === 't') togglePanel('outline')
+    else if (letter === 'a') togglePanel('view')
+    else if (letter === 'm') togglePanel('ambience')
+    else if (letter === 'h') barsVisible = !barsVisible
+    else if (letter === 'g') {
+      barsVisible = true
+      queueMicrotask(() => pageField?.focus())
+    } else if (e.key === 'Escape') {
       if (defining) defining = null
       else if (selection) selection = null
       else if (panel) panel = null
@@ -261,6 +277,7 @@
     } else return
     e.preventDefault()
   }
+
 
   // ── Outline ──────────────────────────────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -471,16 +488,16 @@
       <span class="zoom-value">{Math.round(scale * 100)}%</span>
       <button class="icon" onclick={() => zoomStep(1)} title="Zoom in (Ctrl +)" aria-label="Zoom in"><Icon name="plus" size={16} /></button>
     </div>
-    <button class="icon" class:on={panel === 'outline'} onclick={() => (panel = panel === 'outline' ? null : 'outline')} title="Contents" aria-label="Contents"
+    <button class="icon" class:on={panel === 'outline'} onclick={() => (panel = panel === 'outline' ? null : 'outline')} title="Contents (T)" aria-label="Contents"
       ><Icon name="menu" size={18} /></button
     >
     <button class="icon" class:on={panel === 'search'} onclick={() => (panel = panel === 'search' ? null : 'search')} title="Search (Ctrl+F)" aria-label="Search in document"
       ><Icon name="search" size={18} /></button
     >
-    <button class="icon" class:on={panel === 'ambience'} class:playing={ambience.playing} onclick={() => (panel = panel === 'ambience' ? null : 'ambience')} title="Ambience" aria-label="Ambience"
+    <button class="icon" class:on={panel === 'ambience'} class:playing={ambience.playing} onclick={() => (panel = panel === 'ambience' ? null : 'ambience')} title="Ambience (M)" aria-label="Ambience"
       ><Icon name="sound" size={18} /></button
     >
-    <button class="icon" class:on={panel === 'view'} onclick={() => (panel = panel === 'view' ? null : 'view')} title="View settings" aria-label="View settings"
+    <button class="icon" class:on={panel === 'view'} onclick={() => (panel = panel === 'view' ? null : 'view')} title="View settings (A)" aria-label="View settings"
       ><Icon name="settings" size={18} /></button
     >
   </header>
@@ -584,7 +601,7 @@
   <footer class:hidden={!barsVisible}>
     <form class="goto" onsubmit={jump}>
       <span>Page</span>
-      <input inputmode="numeric" placeholder={String(current + 1)} bind:value={pageInput} aria-label="Go to page" />
+      <input inputmode="numeric" placeholder={String(current + 1)} bind:value={pageInput} bind:this={pageField} aria-label="Go to page" />
       <span>of {count}</span>
     </form>
     <input
