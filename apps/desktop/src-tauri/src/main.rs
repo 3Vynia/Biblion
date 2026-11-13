@@ -1,6 +1,7 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backup;
 mod commands;
 mod protocols;
 mod settings;
@@ -61,6 +62,15 @@ fn main() {
                 let _ = handle.emit("library-changed", report);
             });
             watcher.set_roots(settings.watched_roots());
+            if settings.auto_backup.unwrap_or(true) {
+                // A daily copy of the user's data, off the startup path.
+                let (lib, settings, dir) = (lib.clone(), settings.clone(), data_dir.clone());
+                std::thread::spawn(move || match backup::auto_backup(&lib, &settings, &dir) {
+                    Ok(Some(b)) => tracing::info!("automatic backup: {}", b.path),
+                    Ok(None) => {}
+                    Err(e) => tracing::warn!("automatic backup failed: {e}"),
+                });
+            }
             app.manage(AppState { lib, settings: Mutex::new(settings), settings_path, watcher });
             Ok(())
         })
@@ -100,6 +110,14 @@ fn main() {
             commands::comic_pages,
             commands::books_without_cover,
             commands::set_cover,
+            commands::export_backup,
+            commands::inspect_backup,
+            commands::restore_backup,
+            commands::list_auto_backups,
+            commands::backups_dir,
+            commands::get_auto_backup,
+            commands::set_auto_backup,
+            commands::save_text_file,
             commands::log_reading,
             commands::reading_stats,
             commands::duplicates,

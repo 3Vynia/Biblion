@@ -22,6 +22,8 @@ pub struct Settings {
     pub ambience: Option<serde_json::Value>,
     /// Rescan the library folders when files change (on unless turned off).
     pub watch_folders: Option<bool>,
+    /// A daily backup in the data folder (on unless turned off).
+    pub auto_backup: Option<bool>,
 }
 
 impl Settings {
@@ -120,7 +122,7 @@ mod tests {
         let path = tmp.path().join("settings.json");
         assert_eq!(Settings::load(&path), Settings::default());
 
-        let s = Settings { roots: vec![PathBuf::from("/books")], reader: Some(serde_json::json!({ "theme": "sepia" })), ui: None, watch_folders: Some(false), ambience: Some(serde_json::json!({ "master": 0.5 })) };
+        let s = Settings { roots: vec![PathBuf::from("/books")], reader: Some(serde_json::json!({ "theme": "sepia" })), ui: None, watch_folders: Some(false), auto_backup: None, ambience: Some(serde_json::json!({ "master": 0.5 })) };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
 
