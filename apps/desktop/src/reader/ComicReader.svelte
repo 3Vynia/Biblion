@@ -14,6 +14,7 @@
   import { ambience } from '../lib/ambience/store.svelte'
   import { rangeFill } from '../lib/rangeFill'
   import { readingLog, trackReading } from '../lib/readingLog'
+  import { handleGlobalKey, plain, typing } from '../lib/shortcuts.svelte'
 
   interface Props {
     book: Book
@@ -98,9 +99,24 @@
   const goRight = () => (rtl ? prev() : next())
 
   function onKey(e: KeyboardEvent) {
+    if (handleGlobalKey(e)) return
     if (status !== 'ready') return
-    if ((e.target as HTMLElement | null)?.closest?.('input, select, textarea')) return
+    if (typing(e)) return
     const pages = s.comicMode === 'pages'
+    const letter = plain(e) ? e.key.toLowerCase() : ''
+    if (letter === 'a' || letter === 'm') {
+      e.preventDefault()
+      barsVisible = true
+      if (letter === 'a') [showSettings, showAmbience] = [!showSettings, false]
+      else [showAmbience, showSettings] = [!showAmbience, false]
+      return
+    }
+    if (letter === 'h') {
+      e.preventDefault()
+      barsVisible = !barsVisible
+      return
+    }
+    if (!plain(e) && e.key !== 'Escape') return
     switch (e.key) {
       case 'ArrowLeft':
         if (!pages) return
@@ -253,14 +269,14 @@
       class:on={showAmbience}
       class:playing={ambience.playing}
       onclick={() => ((showAmbience = !showAmbience), (showSettings = false))}
-      title="Ambience"
+      title="Ambience (M)"
       aria-label="Ambience"><Icon name="sound" size={18} /></button
     >
     <button
       class="icon"
       class:on={showSettings}
       onclick={() => ((showSettings = !showSettings), (showAmbience = false))}
-      title="Comic settings"
+      title="Comic settings (A)"
       aria-label="Comic settings"><Icon name="settings" size={18} /></button
     >
   </header>

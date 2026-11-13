@@ -16,7 +16,7 @@
   import { ui } from '../lib/uiSettings.svelte'
   import AmbiencePanel from '../components/AmbiencePanel.svelte'
   import { ambience } from '../lib/ambience/store.svelte'
-  import { THEMES, formatMinutes, readerCss, rendererAttributes } from './readerSettings'
+  import { DEFAULT_SETTINGS, FONT_SIZE, THEMES, formatMinutes, readerCss, rendererAttributes } from './readerSettings'
   import { readerSettings } from './settingsStore.svelte'
   import { rise } from '../lib/motion'
   import TocPanel, { type TocItem } from './TocPanel.svelte'
@@ -24,6 +24,7 @@
   import SettingsPanel from './SettingsPanel.svelte'
   import { rangeFill } from '../lib/rangeFill'
   import { readingLog, trackReading } from '../lib/readingLog'
+  import { handleGlobalKey, plain, typing } from '../lib/shortcuts.svelte'
 
   interface Props {
     book: Book
@@ -60,6 +61,7 @@
   let toc = $state<TocItem[]>([])
   let panel = $state<Panel>(null)
   let barsVisible = $state(true)
+  let positionSlider = $state<HTMLInputElement>()
   let footnote = $state<{ visible: boolean; type: string | null }>({ visible: false, type: null })
 
   // ── Highlights and bookmarks ─────────────────────────────────────────
@@ -309,39 +311,52 @@
   }
 
   function onKey(e: KeyboardEvent) {
+    if (handleGlobalKey(e)) return
     if (status !== 'ready') return
-    const target = e.target as HTMLElement | null
-    if (target?.closest?.('input, select, textarea')) {
+    if (typing(e)) {
       if (e.key === 'Escape') panel = null
       return
     }
-    switch (e.key) {
-      case 'ArrowLeft':
-      case 'PageUp':
-        view.goLeft()
-        break
-      case 'ArrowRight':
-      case 'PageDown':
-      case ' ':
-        view.goRight()
-        break
-      case 'Escape':
-        if (defining) defining = null
-        else if (card) card = null
-        else if (selection) clearSelection()
-        else if (footnote.visible) closeFootnote()
-        else if (panel) panel = null
-        else onclose()
-        break
-      case 'f':
-        if (e.ctrlKey || e.metaKey) togglePanel('search')
-        else return
-        break
-      default:
-        return
-    }
+    const ctrl = e.ctrlKey || e.metaKey
+    const letter = plain(e) ? e.key.toLowerCase() : ''
+    if (ctrl && (e.key === '=' || e.key === '+')) fontStep(1)
+    else if (ctrl && e.key === '-') fontStep(-1)
+    else if (ctrl && e.key === '0') readerSettings.update({ fontSize: DEFAULT_SETTINGS.fontSize })
+    else if (ctrl && e.key === 'f') togglePanel('search')
+    else if (e.altKey && e.key === 'ArrowLeft') view.history.back()
+    else if (e.altKey && e.key === 'ArrowRight') view.history.forward()
+    else if (ctrl || e.altKey) return
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || (e.key === ' ' && e.shiftKey)) view.goLeft()
+    else if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') view.goRight()
+    else if (e.key === 'Home') view.goToFraction(0)
+    else if (e.key === 'End') view.goToFraction(1)
+    else if (e.key === '[') view.renderer.prevSection?.()
+    else if (e.key === ']') view.renderer.nextSection?.()
+    else if (letter === 't') togglePanel('toc')
+    else if (letter === 'n') togglePanel('notes')
+    else if (letter === 'a') togglePanel('settings')
+    else if (letter === 'm') togglePanel('ambience')
+    else if (letter === 'b') toggleBookmark()
+    else if (letter === 'h') barsVisible = !barsVisible
+    else if (letter === 'g') {
+      barsVisible = true
+      queueMicrotask(() => positionSlider?.focus())
+    } else if (e.key === 'Escape') {
+      if (defining) defining = null
+      else if (card) card = null
+      else if (selection) clearSelection()
+      else if (footnote.visible) closeFootnote()
+      else if (panel) panel = null
+      else onclose()
+    } else return
     e.preventDefault()
   }
+
+  function fontStep(dir: 1 | -1) {
+    const size = readerSettings.value.fontSize + dir * FONT_SIZE.step
+    readerSettings.update({ fontSize: Math.min(FONT_SIZE.max, Math.max(FONT_SIZE.min, size)) })
+  }
+
 
   /** Clicks inside the book: side zones turn pages, the centre toggles the bars. */
   function onDocClick(e: MouseEvent) {
@@ -529,20 +544,20 @@
       class:marked={!!pageBookmark}
       onclick={toggleBookmark}
       disabled={status !== 'ready'}
-      title={pageBookmark ? 'Remove bookmark' : 'Bookmark this page'}
+      title={pageBookmark ? 'Remove bookmark (B)' : 'Bookmark this page (B)'}
       aria-label={pageBookmark ? 'Remove bookmark' : 'Bookmark this page'}
       aria-pressed={!!pageBookmark}
     >
       <Icon name="bookmark" size={18} filled={!!pageBookmark} />
     </button>
-    <button class="icon" class:on={panel === 'toc'} onclick={() => togglePanel('toc')} title="Contents" aria-label="Contents"
+    <button class="icon" class:on={panel === 'toc'} onclick={() => togglePanel('toc')} title="Contents (T)" aria-label="Contents"
       ><Icon name="menu" size={18} /></button
     >
     <button
       class="icon"
       class:on={panel === 'notes'}
       onclick={() => togglePanel('notes')}
-      title="Highlights and bookmarks"
+      title="Highlights and bookmarks (N)"
       aria-label="Highlights and bookmarks"><Icon name="quote" size={18} /></button
     >
     <button
@@ -557,14 +572,14 @@
       class:on={panel === 'ambience'}
       class:playing={ambience.playing}
       onclick={() => togglePanel('ambience')}
-      title="Ambience"
+      title="Ambience (M)"
       aria-label="Ambience"><Icon name="sound" size={18} /></button
     >
     <button
       class="icon"
       class:on={panel === 'settings'}
       onclick={() => togglePanel('settings')}
-      title="Reading settings"
+      title="Reading settings (A)"
       aria-label="Reading settings">Aa</button
     >
   </header>
@@ -625,6 +640,7 @@
       onchange={commitSlider}
       disabled={status !== 'ready'}
       aria-label="Position in book"
+      bind:this={positionSlider}
     />
     <span class="meta right">
       {Math.round((sliderValue !== null ? sliderValue / 1000 : fraction) * 100)}%
