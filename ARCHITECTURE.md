@@ -179,6 +179,11 @@ apps/desktop/
   nothing is deleted, restoring twice changes nothing); the preview is the
   same restore run in a transaction that is rolled back. A daily automatic
   backup goes to `backups/` in the data folder (last 7 kept).
+- **Your music** (`music.rs`, ambience): the backend lists the chosen folder
+  and keeps the paths; the page plays `music://localhost/<n>`, so it never
+  names a file. Tracks go through a `MediaElementAudioSourceNode` into the
+  ambience mix (master volume, warmth, limiter, sleep timer). Shuffle plays
+  every track once before repeating; unplayable tracks are skipped.
 - **Keyboard:** `?` or F1 lists every shortcut (`lib/shortcuts.svelte.ts`).
   The readers handle their own keys, since EPUB text lives in a frame.
 

@@ -71,7 +71,8 @@ authors, series, subjects and collections, full book details, an
 EPUB/MOBI/AZW3 reader with themes, highlights, notes, bookmarks and a
 dictionary, a PDF reader (zoom, contents, search, night mode), a comic reader
 (spreads, manga, strip), a Notes screen for the whole library, a
-generative reading ambience (soundscapes, rain, fire, sea, sleep timer),
+generative reading ambience (soundscapes, rain, fire, sea, your own music,
+sleep timer),
 folder watching, a library health screen (duplicates, unreadable and
 missing files), reading statistics (time, streaks, yearly goal), backups
 (manual and daily automatic, restorable on another computer) and keyboard
