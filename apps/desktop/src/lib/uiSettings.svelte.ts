@@ -90,6 +90,12 @@ class UiStore {
     this.apply()
   }
 
+  /** Reads the settings again (after restoring a backup). */
+  async reload() {
+    this.value = normalizeUi(await api.getUiSettings())
+    this.apply()
+  }
+
   update(patch: Partial<UiSettings>) {
     this.value = normalizeUi({ ...this.value, ...patch })
     this.apply()

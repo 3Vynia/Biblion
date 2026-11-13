@@ -1,9 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { open } from '@tauri-apps/plugin-dialog'
-  import { openUrl } from '@tauri-apps/plugin-opener'
+  import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener'
   import { confirm } from '../lib/dialog.svelte'
-  import type { DictionaryInfo } from '../lib/types'
+  import type { AutoBackup, DictionaryInfo } from '../lib/types'
+  import { backUpNow, describe, exportNotes, pickBackupFile, restoreFrom } from '../lib/backup'
+  import { ambience } from '../lib/ambience/store.svelte'
   import Icon, { type IconName } from '../components/Icon.svelte'
   import Switch from '../components/Switch.svelte'
   import SettingsPanel from '../reader/SettingsPanel.svelte'
@@ -12,7 +14,7 @@
   import { FONTS, THEMES } from '../reader/readerSettings'
   import { readerSettings } from '../reader/settingsStore.svelte'
   import { api, errorMessage } from '../lib/api'
-  import { formatBytes, formatCount, formatDuration } from '../lib/format'
+  import { formatBytes, formatCount, formatDate, formatDuration, plural } from '../lib/format'
   import { library } from '../lib/library.svelte'
   import { rise } from '../lib/motion'
   import { scan } from '../lib/scan.svelte'
@@ -30,6 +32,7 @@
     { id: 'library', label: 'Library', icon: 'folder' },
     { id: 'reading', label: 'Reading', icon: 'reading' },
     { id: 'ambience', label: 'Ambience', icon: 'sound' },
+    { id: 'backup', label: 'Backup', icon: 'save' },
     { id: 'keyboard', label: 'Keyboard', icon: 'keyboard' },
     { id: 'about', label: 'About', icon: 'info' },
   ]
@@ -76,6 +79,71 @@
     }
   }
 
+  // ── Backup ──
+  let backupBusy = $state<string | null>(null)
+  let backupMessage = $state<string | null>(null)
+  let backupError = $state<string | null>(null)
+  let restorePrefs = $state(false)
+  let autoBackup = $state(true)
+  let autoBackups = $state<AutoBackup[]>([])
+
+  async function backupAction(label: string, fn: () => Promise<string | null>) {
+    backupBusy = label
+    backupError = null
+    try {
+      const message = await fn()
+      if (message) backupMessage = message
+    } catch (e) {
+      backupError = errorMessage(e)
+    } finally {
+      backupBusy = null
+    }
+  }
+
+  const saveBackup = () =>
+    backupAction('save', async () => {
+      const b = await backUpNow()
+      if (!b) return null
+      return `Saved ${formatBytes(b.size)}: ${formatCount(b.annotations)} highlights and notes, progress of ${formatCount(b.progress)} ${plural(b.progress, 'book')}, ${formatCount(b.shelves)} ${plural(b.shelves, 'collection')}.`
+    })
+
+  const restoreBackup = (path: string | null) =>
+    backupAction('restore', async () => {
+      const file = path ?? (await pickBackupFile())
+      if (!file) return null
+      const report = await restoreFrom(file, restorePrefs)
+      if (!report) return null
+      library.changed()
+      if (restorePrefs) await Promise.all([ui.reload(), readerSettings.reload(), ambience.reload()])
+      const changes = describe(report)
+      return changes.length ? `Restored: ${changes.join(', ')}.` : 'Nothing to restore: your library already had everything.'
+    })
+
+  const exportAllNotes = () =>
+    backupAction('notes', async () => {
+      const done = await exportNotes()
+      return done ? `Exported ${formatCount(done.notes)} ${plural(done.notes, 'note')} from ${formatCount(done.books)} ${plural(done.books, 'book')}.` : null
+    })
+
+  async function setAutoBackup(on: boolean) {
+    autoBackup = on
+    try {
+      await api.setAutoBackup(on)
+    } catch (e) {
+      autoBackup = !on
+      backupError = errorMessage(e)
+    }
+  }
+
+  async function showBackupsFolder() {
+    try {
+      const first = autoBackups[0]
+      await revealItemInDir(first ? first.path : await api.backupsDir())
+    } catch (e) {
+      backupError = errorMessage(e)
+    }
+  }
+
   let watchFolders = $state(true)
   async function setWatch(on: boolean) {
     watchFolders = on
@@ -90,6 +158,8 @@
   onMount(() => {
     readerSettings.load()
     api.getWatchFolders().then((v) => (watchFolders = v)).catch(() => {})
+    api.getAutoBackup().then((v) => (autoBackup = v)).catch(() => {})
+    api.listAutoBackups().then((v) => (autoBackups = v)).catch(() => {})
     api.dataDir().then((d) => (dataDir = d)).catch(() => {})
     api.listDictionaries().then((d) => (dictionaries = d)).catch(() => {})
     // Highlight the section being read in the side index.
@@ -385,6 +455,56 @@
     </section>
 
     <!-- About -->
+    <section id="backup">
+      <h2>Backup</h2>
+      <p class="hint">
+        Your highlights, notes, reading progress, collections and reading time live in Biblion’s database. A backup keeps
+        them safe, and brings them back on this computer or another one, even if your books moved.
+      </p>
+      <div class="card">
+        <div class="buttons">
+          <button class="primary" disabled={!!backupBusy} onclick={saveBackup}><Icon name="save" size={15} /> Back up now…</button>
+          <button disabled={!!backupBusy} onclick={() => restoreBackup(null)}>Restore from a file…</button>
+          <span class="spacer"></span>
+          <button disabled={!!backupBusy} onclick={exportAllNotes} title="Every highlight and note, book by book">
+            <Icon name="quote" size={15} /> Export notes as Markdown…
+          </button>
+        </div>
+        {#if backupMessage}<p class="hint backup-message" role="status">{backupMessage}</p>{/if}
+        {#if backupError}<p class="error">{backupError}</p>{/if}
+        <Switch
+          label="Also restore preferences"
+          description="Reading, appearance and ambience settings from the backup replace yours. Library folders never change."
+          checked={restorePrefs}
+          onchange={(v) => (restorePrefs = v)}
+        />
+      </div>
+      <div class="card">
+        <Switch
+          label="Automatic backups"
+          description="A copy every day in Biblion’s data folder. The last seven are kept."
+          checked={autoBackup}
+          onchange={setAutoBackup}
+        />
+        {#if autoBackups.length}
+          <ul class="auto-backups">
+            {#each autoBackups as b (b.path)}
+              <li>
+                <Icon name="clock" size={14} />
+                <span class="when">{formatDate(b.created_at)}</span>
+                <span class="size">{formatBytes(b.size)}</span>
+                <span class="spacer"></span>
+                <button class="ghost small" disabled={!!backupBusy} onclick={() => restoreBackup(b.path)}>Restore</button>
+              </li>
+            {/each}
+          </ul>
+          <div class="buttons">
+            <button class="ghost" onclick={showBackupsFolder}><Icon name="folder" size={15} /> Show folder</button>
+          </div>
+        {/if}
+      </div>
+    </section>
+
     <section id="keyboard">
       <h2>Keyboard</h2>
       <p class="hint">Press <kbd>?</kbd> anywhere to see these.</p>
@@ -699,8 +819,39 @@
 
   .buttons {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     padding: 12px 0;
+  }
+
+  .backup-message {
+    margin-top: 0;
+    color: var(--text);
+  }
+
+  .auto-backups {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .auto-backups li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .auto-backups .when {
+    color: var(--text);
+  }
+
+  button.small {
+    padding: 4px 10px;
+    font-size: 12px;
   }
 
   .buttons button {

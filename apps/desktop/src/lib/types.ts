@@ -252,3 +252,41 @@ export interface ReadingStats {
   top_authors: { name: string; seconds: number }[]
   books_read: number
 }
+
+// ── Backups (src-tauri/src/backup.rs, crates/biblion-core/src/backup.rs) ──
+
+export interface BackupSummary {
+  path: string
+  created_at: number
+  size: number
+  books: number
+  progress: number
+  annotations: number
+  shelves: number
+  reading_days: number
+}
+
+export interface RestoreReport {
+  books: number
+  matched: number
+  progress: number
+  annotations: number
+  shelves_created: number
+  shelf_books: number
+  marks: number
+  reading_days: number
+  missing_samples: string[]
+}
+
+export interface BackupPreview {
+  created_at: number
+  app_version: string
+  has_settings: boolean
+  report: RestoreReport
+}
+
+export interface AutoBackup {
+  path: string
+  created_at: number
+  size: number
+}

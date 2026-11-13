@@ -11,6 +11,12 @@ class SettingsStore {
   #loaded: Promise<void> | null = null
   #timer: ReturnType<typeof setTimeout> | undefined
 
+  /** Reads the settings again (after restoring a backup). */
+  reload(): Promise<void> {
+    this.#loaded = null
+    return this.load()
+  }
+
   load(): Promise<void> {
     this.#loaded ??= api
       .getReaderSettings()
