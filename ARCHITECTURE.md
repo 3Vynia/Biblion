@@ -171,6 +171,17 @@ apps/desktop/
   these: time read, streaks, a yearly goal, a calendar, time per month (with
   a table view), finished and most-read books.
 
+- **Backups** (`backup.rs` in the core and the app): a JSON file with
+  progress, highlights, notes, bookmarks, collections, favourites, ratings
+  and the reading log, plus the reader/appearance/ambience preferences.
+  Books are named by fingerprint, path and title + author, so a backup
+  restores on another computer. Restoring merges (newer progress wins,
+  nothing is deleted, restoring twice changes nothing); the preview is the
+  same restore run in a transaction that is rolled back. A daily automatic
+  backup goes to `backups/` in the data folder (last 7 kept).
+- **Keyboard:** `?` or F1 lists every shortcut (`lib/shortcuts.svelte.ts`).
+  The readers handle their own keys, since EPUB text lives in a frame.
+
 ## To do / ideas
 
 - Cursor (keyset) pagination if jumps beyond 1M rows are ever needed.
