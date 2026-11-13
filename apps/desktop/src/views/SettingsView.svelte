@@ -8,6 +8,7 @@
   import Switch from '../components/Switch.svelte'
   import SettingsPanel from '../reader/SettingsPanel.svelte'
   import AmbiencePanel from '../components/AmbiencePanel.svelte'
+  import ShortcutList from '../components/ShortcutList.svelte'
   import { FONTS, THEMES } from '../reader/readerSettings'
   import { readerSettings } from '../reader/settingsStore.svelte'
   import { api, errorMessage } from '../lib/api'
@@ -29,6 +30,7 @@
     { id: 'library', label: 'Library', icon: 'folder' },
     { id: 'reading', label: 'Reading', icon: 'reading' },
     { id: 'ambience', label: 'Ambience', icon: 'sound' },
+    { id: 'keyboard', label: 'Keyboard', icon: 'keyboard' },
     { id: 'about', label: 'About', icon: 'info' },
   ]
 
@@ -383,6 +385,12 @@
     </section>
 
     <!-- About -->
+    <section id="keyboard">
+      <h2>Keyboard</h2>
+      <p class="hint">Press <kbd>?</kbd> anywhere to see these.</p>
+      <div class="card"><ShortcutList /></div>
+    </section>
+
     <section id="about">
       <h2>About</h2>
       <div class="card about">
