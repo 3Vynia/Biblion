@@ -40,6 +40,12 @@ class AmbienceStore {
     return activeScene(this.value, this.scenes)
   }
 
+  /** Reads the settings again (after restoring a backup). */
+  reload(): Promise<void> {
+    this.#loaded = null
+    return this.load()
+  }
+
   load(): Promise<void> {
     this.#loaded ??= api
       .getAmbienceSettings()

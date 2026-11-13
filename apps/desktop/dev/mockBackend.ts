@@ -145,6 +145,10 @@ let readerSettings: unknown = null
 let uiSettings: unknown = null
 let ambienceSettings: unknown = null
 let watchFolders = true
+let autoBackup = true
+let restoredBackup: { path: string; settings: boolean } | null = null
+const savedFiles: { path: string; contents: string }[] = []
+;(window as unknown as { __saved: typeof savedFiles }).__saved = savedFiles
 
 // Reading log: what the readers send, on top of a made-up history so the
 // statistics screen has something to show.
@@ -239,6 +243,7 @@ function forget(ids: number[]) {
 declare global {
   interface Window {
     __calls: { cmd: string; args: Record<string, unknown> }[]
+    __nextPath?: string
   }
 }
 window.__calls = []
@@ -461,6 +466,38 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       return { words: 98_765, characters: 512_000, chapters: 31, images: 4, reading_minutes: 396 }
     case 'data_dir':
       return '/home/reader/.local/share/io.github.3vynia.biblion'
+    // File dialogs answer with the path a test put in window.__nextPath.
+    case 'plugin:dialog|open':
+    case 'plugin:dialog|save': {
+      const path = window.__nextPath ?? null
+      window.__nextPath = undefined
+      return path
+    }
+    case 'export_backup':
+      return { path: args.path, created_at: Math.floor(Date.now() / 1000), size: 48_213, books: 61, progress: 58, annotations: 24, shelves: 2, reading_days: 140 }
+    case 'inspect_backup':
+      if (!String(args.path).endsWith('.json')) throw { code: 'invalid_backup', message: 'This is not a Biblion backup.' }
+      return {
+        created_at: Math.floor(Date.now() / 1000) - 3 * 86_400,
+        app_version: '0.1.0',
+        has_settings: true,
+        report: { books: 64, matched: 61, progress: 12, annotations: 9, shelves_created: 1, shelf_books: 4, marks: 2, reading_days: 30, missing_samples: ['Lost Book (Some One)'] },
+      }
+    case 'restore_backup':
+      restoredBackup = { path: args.path as string, settings: args.settings as boolean }
+      return { books: 64, matched: 61, progress: 12, annotations: 9, shelves_created: 1, shelf_books: 4, marks: 2, reading_days: 30, missing_samples: ['Lost Book (Some One)'] }
+    case 'list_auto_backups':
+      return [0, 1].map((i) => ({ path: `/data/backups/biblion-2026-11-${12 - i}.json`, created_at: Math.floor(Date.now() / 1000) - i * 86_400, size: 40_000 + i }))
+    case 'backups_dir':
+      return '/data/backups'
+    case 'get_auto_backup':
+      return autoBackup
+    case 'set_auto_backup':
+      autoBackup = args.on as boolean
+      return null
+    case 'save_text_file':
+      savedFiles.push({ path: args.path as string, contents: args.contents as string })
+      return null
     default:
       console.warn('mock: unhandled command', cmd, args)
       return null
