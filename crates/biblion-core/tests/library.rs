@@ -672,3 +672,65 @@ fn reading_time_and_finished_books_are_counted() {
     let old = lib.reading_stats("2025-01-01", "2025-12-31", 0, i64::MAX).unwrap();
     assert_eq!(old.days[0].seconds, 15 * 60);
 }
+
+#[test]
+fn a_backup_restores_into_another_library() {
+    use biblion_core::backup::{LibraryBackup, RestoreReport};
+    use biblion_core::{AnnotationKind, NewAnnotation};
+    let tmp = tempfile::tempdir().unwrap();
+    let ids_by_title = |lib: &Library| -> Vec<i64> {
+        lib.list_books(&BookQuery { sort: SortBy::Title, limit: 10, ..Default::default() }).unwrap().items.iter().map(|b| b.id).collect()
+    };
+
+    // The library the backup comes from.
+    let books = tmp.path().join("books");
+    write_epub(&books.join("a.epub"), "Dune", "Frank Herbert", 1);
+    write_epub(&books.join("b.epub"), "Emma", "Jane Austen", 2);
+    let old = Library::open(tmp.path().join("old")).unwrap();
+    scan(&old, &books);
+    let ids = ids_by_title(&old);
+    old.set_progress(ids[0], "epubcfi(/6/4)", 0.4, false).unwrap();
+    old.add_annotation(&NewAnnotation {
+        book_id: ids[0],
+        kind: AnnotationKind::Highlight,
+        locator: "epubcfi(/6/4!/4/2,/1:0,/1:9)".into(),
+        text: "The spice".into(),
+        note: Some("Remember this".into()),
+        color: Some("green".into()),
+        chapter: None,
+        percent: 0.4,
+    })
+    .unwrap();
+    let shelf = old.create_shelf("Classics").unwrap();
+    old.add_to_shelf(shelf, ids[1]).unwrap();
+    old.set_favorite(ids[1], true).unwrap();
+    old.log_reading(ids[0], "2026-11-10", 600, 30).unwrap();
+    let json = serde_json::to_string(&old.export_backup().unwrap()).unwrap();
+
+    // Another computer: the same files, somewhere else.
+    let moved = tmp.path().join("moved");
+    std::fs::create_dir_all(&moved).unwrap();
+    std::fs::copy(books.join("a.epub"), moved.join("dune.epub")).unwrap();
+    std::fs::copy(books.join("b.epub"), moved.join("emma.epub")).unwrap();
+    let new = Library::open(tmp.path().join("new")).unwrap();
+    scan(&new, &moved);
+    let backup: LibraryBackup = serde_json::from_str(&json).unwrap();
+
+    let preview = new.restore_backup(&backup, true).unwrap();
+    assert_eq!((preview.books, preview.matched), (2, 2));
+    assert_eq!((preview.progress, preview.annotations, preview.shelves_created, preview.shelf_books, preview.marks, preview.reading_days), (1, 1, 1, 1, 1, 1));
+    // A preview changes nothing.
+    assert!(new.export_backup().unwrap().books.is_empty());
+
+    let done = new.restore_backup(&backup, false).unwrap();
+    assert_eq!(done, preview);
+    let ids = ids_by_title(&new);
+    assert_eq!(new.book_annotations(ids[0]).unwrap()[0].note.as_deref(), Some("Remember this"));
+    assert!(new.get_book(ids[1]).unwrap().favorite);
+    assert!(new.list_shelves().unwrap().iter().any(|s| s.name == "Classics" && s.book_count == 1));
+    assert_eq!(new.reading_stats("2026-01-01", "2026-12-31", 0, i64::MAX).unwrap().days[0].seconds, 600);
+
+    // Restoring again adds nothing.
+    let again = new.restore_backup(&backup, false).unwrap();
+    assert_eq!(again, RestoreReport { books: 2, matched: 2, ..Default::default() });
+}

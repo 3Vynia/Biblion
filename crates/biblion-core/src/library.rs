@@ -135,6 +135,18 @@ impl Library {
         self.read(db::stats)
     }
 
+    // ── Backup ───────────────────────────────────────────────────────
+
+    /// Progress, notes, collections, marks and reading time, ready to save.
+    pub fn export_backup(&self) -> Result<crate::backup::LibraryBackup> {
+        self.read(crate::backup::export)
+    }
+
+    /// Merges a backup in (see `backup::restore`); `dry_run` only reports.
+    pub fn restore_backup(&self, backup: &crate::backup::LibraryBackup, dry_run: bool) -> Result<crate::backup::RestoreReport> {
+        self.user_write(|c| crate::backup::restore(c, backup, dry_run))
+    }
+
     // ── Library health ───────────────────────────────────────────────
 
     /// Duplicate books. Identical files are confirmed by hashing them whole,
