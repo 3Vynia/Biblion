@@ -10,6 +10,9 @@
   import { LAYERS, MODES, type LayerId, type Mode, type Scene } from '../lib/ambience/settings'
   import { rise } from '../lib/motion'
   import { rangeFill } from '../lib/rangeFill'
+  import { onMount } from 'svelte'
+  import { open } from '@tauri-apps/plugin-dialog'
+  import { errorMessage } from '../lib/api'
 
   interface Props {
     /** Smaller layout for the reader's side panel. */
@@ -40,6 +43,24 @@
   }
 
   const pct = (v: number) => Math.round(v * 100)
+
+  // ── Music folder ──
+  const lib = $derived(ambience.musicLibrary)
+  let musicError = $state<string | null>(null)
+  onMount(() => {
+    ambience.loadMusic()
+  })
+
+  async function pickMusicFolder() {
+    musicError = null
+    const path = await open({ directory: true, multiple: false, title: 'Choose a folder with music' })
+    if (typeof path !== 'string') return
+    try {
+      await ambience.chooseMusicFolder(path)
+    } catch (e) {
+      musicError = errorMessage(e)
+    }
+  }
 </script>
 
 <div class="ambience" class:compact>
@@ -142,6 +163,62 @@
         </span>
       {/each}
     </div>
+  </section>
+
+  <section class="music">
+    <div class="row-head">
+      <h4>Your music</h4>
+      {#if lib?.folder}
+        <span class="folder-actions">
+          <button class="text" onclick={pickMusicFolder} title={lib.folder}>Change folder</button>
+          <button class="text muted" onclick={() => ambience.forgetMusicFolder()}>Stop using it</button>
+        </span>
+      {/if}
+    </div>
+    {#if !lib?.folder}
+      <button class="choose" onclick={pickMusicFolder}>
+        <Icon name="music" size={16} />
+        <span>
+          <strong>Choose a music folder…</strong>
+          <small>Your own songs, mixed with the ambience. MP3, OGG, Opus, FLAC, M4A or WAV.</small>
+        </span>
+      </button>
+    {:else if lib.tracks.length === 0}
+      <p class="empty-music">No music found in {lib.folder}.</p>
+    {:else}
+      <div class="layer" class:on={s.music.on}>
+        <button class="toggle" role="switch" aria-checked={s.music.on} aria-label="Play my music" onclick={() => ambience.setMusic({ on: !s.music.on })}>
+          <span class="dot"></span>
+          Play my music
+          <span class="count">{lib.tracks.length} {lib.tracks.length === 1 ? 'track' : 'tracks'}</span>
+        </button>
+        {#if s.music.on}
+          <div class="now" in:rise={{ y: 4, duration: 200 }}>
+            <div class="track">
+              <span class="track-title">{ambience.track?.title ?? '—'}</span>
+              {#if ambience.track?.folder}<span class="track-folder">{ambience.track.folder}</span>{/if}
+            </div>
+            <div class="transport">
+              <button class="icon" onclick={() => ambience.prevTrack()} aria-label="Previous track" title="Previous track"><Icon name="skip-back" size={14} /></button>
+              <button class="icon" onclick={() => ambience.nextTrack()} aria-label="Next track" title="Next track"><Icon name="skip-forward" size={14} /></button>
+              <button
+                class="icon"
+                class:on={s.music.shuffle}
+                onclick={() => ambience.setMusic({ shuffle: !s.music.shuffle })}
+                aria-label="Shuffle"
+                aria-pressed={s.music.shuffle}
+                title="Shuffle"><Icon name="shuffle" size={14} /></button
+              >
+            </div>
+          </div>
+          <label class="slider">
+            <span class="mini">Vol</span>
+            <input type="range" min="0" max="1" step="0.01" value={s.music.volume} use:rangeFill={s.music.volume} oninput={(e) => ambience.setMusic({ volume: Number(e.currentTarget.value) })} aria-label="Music volume" />
+          </label>
+        {/if}
+      </div>
+    {/if}
+    {#if musicError}<p class="error">{musicError}</p>{/if}
   </section>
 
   <section>
@@ -308,6 +385,123 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+  }
+
+  .folder-actions {
+    display: flex;
+    gap: 2px;
+  }
+
+  .text.muted {
+    color: var(--a-muted);
+  }
+
+  .choose {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px dashed var(--a-border);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--a-fg);
+    text-align: left;
+  }
+
+  .choose:hover {
+    border-color: var(--a-accent);
+    background: var(--a-hover);
+  }
+
+  .choose :global(svg) {
+    flex: none;
+    color: var(--a-accent);
+  }
+
+  .choose span {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .choose small {
+    color: var(--a-muted);
+    font-size: 12px;
+  }
+
+  .empty-music {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--a-muted);
+  }
+
+  .count {
+    margin-left: auto;
+    font-size: 11.5px;
+    font-weight: 400;
+    color: var(--a-muted);
+  }
+
+  .now {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0 2px;
+  }
+
+  .track {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .track-title,
+  .track-folder {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .track-title {
+    font-size: 13px;
+  }
+
+  .track-folder {
+    font-size: 11.5px;
+    color: var(--a-muted);
+  }
+
+  .transport {
+    display: flex;
+    gap: 2px;
+  }
+
+  .transport .icon {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--a-fg);
+  }
+
+  .transport .icon:hover {
+    background: var(--a-hover);
+  }
+
+  .transport .icon.on {
+    color: var(--a-accent);
+  }
+
+  .error {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: #dc2626;
   }
 
   .row-head h4 {

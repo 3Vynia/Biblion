@@ -70,3 +70,30 @@ test('the reader has its own ambience panel', async ({ page }) => {
   await reader.getByRole('button', { name: 'Seaside' }).click()
   await expect(reader.getByRole('button', { name: 'Ambience', exact: true })).toHaveClass(/playing/)
 })
+
+test('your own music folder plays with the ambience', async ({ page }) => {
+  const panel = await openAmbience(page)
+  await page.evaluate(() => ((window as unknown as { __nextPath?: string }).__nextPath = '/home/me/Music'))
+  await panel.getByRole('button', { name: /Choose a music folder/ }).click()
+  const music = panel.getByRole('switch', { name: 'Play my music' })
+  await expect(music).toHaveAttribute('aria-checked', 'true')
+  await expect(panel.locator('.music .count')).toHaveText('4 tracks')
+  await expect(page.locator('.sidebar')).toContainText(/Pause ambience|ambience/i)
+
+  // Next track, in folder order once shuffle is off.
+  await panel.getByRole('button', { name: 'Shuffle' }).click()
+  await expect(panel.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'false')
+  const first = await panel.locator('.track-title').textContent()
+  await panel.getByRole('button', { name: 'Next track' }).click()
+  await expect(panel.locator('.track-title')).not.toHaveText(first!)
+  await panel.getByRole('button', { name: 'Previous track' }).click()
+  await expect(panel.locator('.track-title')).toHaveText(first!)
+
+  // Forgetting the folder asks first.
+  await panel.getByRole('button', { name: 'Stop using it' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click()
+  await expect(music).toBeVisible()
+  await panel.getByRole('button', { name: 'Stop using it' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Stop using it' }).click()
+  await expect(panel.getByRole('button', { name: /Choose a music folder/ })).toBeVisible()
+})

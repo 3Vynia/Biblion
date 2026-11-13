@@ -146,6 +146,12 @@ let uiSettings: unknown = null
 let ambienceSettings: unknown = null
 let watchFolders = true
 let autoBackup = true
+let musicFolder: string | null = null
+const MOCK_TRACKS = ['Morning light', 'Slow river', 'Reading by the window', 'Night garden'].map((title, index) => ({
+  index,
+  title,
+  folder: index < 2 ? 'Calm piano' : '',
+}))
 let restoredBackup: { path: string; settings: boolean } | null = null
 const savedFiles: { path: string; contents: string }[] = []
 ;(window as unknown as { __saved: typeof savedFiles }).__saved = savedFiles
@@ -490,6 +496,11 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       return [0, 1].map((i) => ({ path: `/data/backups/biblion-2026-11-${12 - i}.json`, created_at: Math.floor(Date.now() / 1000) - i * 86_400, size: 40_000 + i }))
     case 'backups_dir':
       return '/data/backups'
+    case 'get_music':
+      return { folder: musicFolder, tracks: musicFolder ? MOCK_TRACKS : [] }
+    case 'set_music_folder':
+      musicFolder = (args.path as string | null) ?? null
+      return { folder: musicFolder, tracks: musicFolder ? MOCK_TRACKS : [] }
     case 'get_auto_backup':
       return autoBackup
     case 'set_auto_backup':

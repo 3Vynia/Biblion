@@ -290,3 +290,18 @@ export interface AutoBackup {
   created_at: number
   size: number
 }
+
+// ── Music folder (src-tauri/src/music.rs) ──
+
+export interface Track {
+  /** Position in the backend's listing; played from music://localhost/<index>. */
+  index: number
+  title: string
+  /** Sub-folder (an album, usually), relative to the music folder. */
+  folder: string
+}
+
+export interface MusicLibrary {
+  folder: string | null
+  tracks: Track[]
+}

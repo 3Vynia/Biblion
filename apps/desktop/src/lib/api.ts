@@ -21,6 +21,7 @@ import type {
   Page,
   ScanEvent,
   ScanReport,
+  MusicLibrary,
   AutoBackup,
   BackupPreview,
   BackupSummary,
@@ -92,6 +93,9 @@ export const api = {
   getUiSettings: () => invoke<unknown>('get_ui_settings'),
   getAmbienceSettings: () => invoke<unknown>('get_ambience_settings'),
   getWatchFolders: () => invoke<boolean>('get_watch_folders'),
+  getMusic: () => invoke<MusicLibrary>('get_music'),
+  /** Sets (or with null forgets) the music folder; returns its tracks. */
+  setMusicFolder: (path: string | null) => invoke<MusicLibrary>('set_music_folder', { path }),
   exportBackup: (path: string) => invoke<BackupSummary>('export_backup', { path }),
   inspectBackup: (path: string) => invoke<BackupPreview>('inspect_backup', { path }),
   /** Merges a backup into the library; `settings` also restores preferences. */
