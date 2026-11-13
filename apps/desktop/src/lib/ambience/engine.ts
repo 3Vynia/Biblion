@@ -480,7 +480,52 @@ class Texture {
 
 // ───────────────────────────── Engine ─────────────────────────────
 
+/**
+ * The user's music: an <audio> element fed into the mix, so the master
+ * volume, the warmth filter, the limiter and the sleep timer apply to it.
+ */
+class Music {
+  el = new Audio()
+  #gain: GainNode
+  #c: Context
+
+  constructor(c: Context, onEnded: () => void, onError: () => void) {
+    this.#c = c
+    this.el.crossOrigin = 'anonymous' // custom scheme: needed to hear it through Web Audio
+    this.el.preload = 'auto'
+    this.el.addEventListener('ended', onEnded)
+    this.el.addEventListener('error', onError)
+    this.#gain = c.ctx.createGain()
+    this.#gain.gain.value = 0.0001
+    c.ctx.createMediaElementSource(this.el).connect(this.#gain).connect(c.out)
+  }
+
+  play(url: string, volume: number) {
+    const now = this.#c.ctx.currentTime
+    if (this.el.src !== url) {
+      this.el.src = url
+      this.#gain.gain.cancelScheduledValues(now)
+      this.#gain.gain.setValueAtTime(0.0001, now) // each track fades in
+    }
+    this.#gain.gain.setTargetAtTime(Math.max(0.0001, volume), now, 0.6)
+    if (this.el.paused) this.el.play().catch(() => {})
+  }
+
+  pause() {
+    this.#gain.gain.setTargetAtTime(0.0001, this.#c.ctx.currentTime, 0.3)
+    setTimeout(() => this.el.pause(), 900)
+  }
+
+  get position(): number {
+    return this.el.duration ? this.el.currentTime / this.el.duration : 0
+  }
+}
+
 export class AmbienceEngine {
+  #music: Music | null = null
+  /** Called when a track ends, or cannot be played (to move on). */
+  onTrackEnd: ((failed: boolean) => void) | null = null
+
   #c: Context | null = null
   #master!: GainNode
   #analyser!: AnalyserNode
@@ -560,6 +605,27 @@ export class AmbienceEngine {
         this.#textures.delete(id)
       }
     }
+  }
+
+  /** Plays a track of the user's music (null: no music). */
+  async music(url: string | null, volume: number, playing: boolean) {
+    if (!url || !playing) {
+      this.#music?.pause()
+      return
+    }
+    const c = this.#ensure()
+    if (c.ctx.state !== 'running') await c.ctx.resume().catch(() => {})
+    this.#music ??= new Music(
+      c,
+      () => this.onTrackEnd?.(false),
+      () => this.onTrackEnd?.(true),
+    )
+    this.#music.play(url, volume)
+  }
+
+  /** How far into the current track, 0 – 1. */
+  musicPosition(): number {
+    return this.#music?.position ?? 0
   }
 
   /** Fades everything out over `seconds` (the sleep timer). */

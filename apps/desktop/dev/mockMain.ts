@@ -12,7 +12,11 @@ const internals = (window as unknown as { __TAURI_INTERNALS__: { convertFileSrc:
   .__TAURI_INTERNALS__
 const convert = internals.convertFileSrc
 internals.convertFileSrc = (path, scheme = 'asset') =>
-  scheme === 'comic' ? `/dev/fixtures/comic/${Number(path.split('/')[1]) % 7}.jpg` : convert(path, scheme)
+  scheme === 'comic'
+    ? `/dev/fixtures/comic/${Number(path.split('/')[1]) % 7}.jpg`
+    : scheme === 'music'
+      ? `/dev/fixtures/music.wav?track=${path}`
+      : convert(path, scheme)
 
 // The reader fetches books from book://; serve the test EPUB instead.
 const realFetch = window.fetch.bind(window)

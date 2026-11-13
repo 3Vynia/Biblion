@@ -56,6 +56,14 @@ export interface AmbienceSettings {
   timerMinutes: number
   /** Mixes saved by the user. */
   scenes: Scene[]
+  /** The user's own music folder (chosen in the backend). */
+  music: MusicState
+}
+
+export interface MusicState {
+  on: boolean
+  volume: number
+  shuffle: boolean
 }
 
 export interface LayerInfo {
@@ -96,6 +104,7 @@ export const DEFAULT_AMBIENCE: AmbienceSettings = {
     pink: off(0.35),
     white: off(0.25),
   },
+  music: { on: false, volume: 0.6, shuffle: true },
   autoStart: false,
   pageTurn: false,
   pageTurnVolume: 0.5,
@@ -176,6 +185,14 @@ export function normalizeAmbience(raw: unknown): AmbienceSettings {
     pageTurnVolume: clamp01(r.pageTurnVolume, d.pageTurnVolume),
     timerMinutes: typeof r.timerMinutes === 'number' && [0, 15, 30, 45, 60, 90, 120].includes(r.timerMinutes) ? r.timerMinutes : 0,
     scenes,
+    music: (() => {
+      const m = (r.music && typeof r.music === 'object' ? r.music : {}) as Record<string, unknown>
+      return {
+        on: typeof m.on === 'boolean' ? m.on : d.music.on,
+        volume: clamp01(m.volume, d.music.volume),
+        shuffle: typeof m.shuffle === 'boolean' ? m.shuffle : d.music.shuffle,
+      }
+    })(),
   }
 }
 
@@ -220,4 +237,4 @@ export function activeScene(s: AmbienceSettings, scenes: Scene[]): Scene | undef
 }
 
 /** Something would make a sound. */
-export const anyLayerOn = (s: AmbienceSettings) => s.soundscape.on || ids.some((id) => s.layers[id].on)
+export const anyLayerOn = (s: AmbienceSettings) => s.soundscape.on || s.music.on || ids.some((id) => s.layers[id].on)
