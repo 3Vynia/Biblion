@@ -3,6 +3,7 @@
 //!
 //! The UI layer (Tauri) should only talk to [`Library`].
 
+pub mod backup;
 pub mod covers;
 pub mod db;
 pub mod dictionary;
