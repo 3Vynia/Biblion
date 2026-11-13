@@ -60,6 +60,60 @@
     return out
   })
 
+  // ── Keyboard: arrows move between books, Enter reads, Space selects ──
+  let cursor = $state(0)
+  // Roving focus: one card is reachable with Tab, the cursor's or else the
+  // first one on screen.
+  const tabStop = $derived(cells.find((c) => c.index === cursor && c.book)?.index ?? cells.find((c) => c.book)?.index ?? -1)
+
+  /** Scrolls a book into view and focuses its card once it is loaded. */
+  function moveTo(index: number) {
+    const last = total - 1
+    if (last < 0) return
+    index = Math.max(0, Math.min(last, index))
+    cursor = index
+    const row = Math.floor(index / metrics.columns)
+    const top = PADDING + row * metrics.rowHeight
+    if (top < viewport.scrollTop) viewport.scrollTop = top - PADDING
+    else if (top + metrics.rowHeight > viewport.scrollTop + height) viewport.scrollTop = top + metrics.rowHeight - height + PADDING
+    scrollTop = viewport.scrollTop
+    cache.ensure(index, index + 1)
+    const started = performance.now()
+    const focus = () => {
+      if (cursor !== index) return
+      const card = viewport.querySelector<HTMLButtonElement>(`[data-index="${index}"]`)
+      if (card) {
+        card.focus({ preventScroll: true })
+        // The details panel, when open, follows the cursor.
+        const book = cache.get(index)
+        if (book && selectedId !== null && !selecting) onselect(book)
+      } else if (performance.now() - started < 3000) requestAnimationFrame(focus)
+    }
+    requestAnimationFrame(focus)
+  }
+
+  function onKey(e: KeyboardEvent) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    const cols = metrics.columns
+    const page = Math.max(1, Math.floor(height / metrics.rowHeight)) * cols
+    const moves: Record<string, number> = {
+      ArrowRight: 1,
+      ArrowLeft: -1,
+      ArrowDown: cols,
+      ArrowUp: -cols,
+      PageDown: page,
+      PageUp: -page,
+    }
+    if (e.key in moves) moveTo(cursor + moves[e.key])
+    else if (e.key === 'Home') moveTo(0)
+    else if (e.key === 'End') moveTo(total - 1)
+    else if (e.key === 'Enter' && !selecting) {
+      const book = cache.get(cursor)
+      if (book) onopen(book)
+    } else return
+    e.preventDefault()
+  }
+
   export function scrollToTop() {
     if (viewport) viewport.scrollTop = 0
     scrollTop = 0
@@ -75,6 +129,12 @@
   role="grid"
   aria-rowcount={metrics.rows}
   aria-label="Books"
+  tabindex="-1"
+  onkeydown={onKey}
+  onfocusin={(e) => {
+    const i = (e.target as HTMLElement).dataset?.index
+    if (i !== undefined) cursor = Number(i)
+  }}
 >
   <div class="spacer" style:height="{metrics.totalHeight + PADDING * 2}px">
     {#each cells as cell (cell.index)}
@@ -98,7 +158,8 @@
             aria-pressed={selecting ? isPicked : undefined}
             onclick={() => (selecting ? ontoggle?.(book) : onselect(book))}
             ondblclick={() => !selecting && onopen(book)}
-            onkeydown={(e) => !selecting && e.key === 'Enter' && e.shiftKey && onopen(book)}
+            data-index={cell.index}
+            tabindex={cell.index === tabStop ? 0 : -1}
             title={book.title}
           >
             {#if selecting}
