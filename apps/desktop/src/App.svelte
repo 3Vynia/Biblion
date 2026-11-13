@@ -19,11 +19,13 @@
   import SubjectsView from './views/SubjectsView.svelte'
   import NotesView from './views/NotesView.svelte'
   import ConfirmDialog from './components/ConfirmDialog.svelte'
+  import ShortcutsHelp from './components/ShortcutsHelp.svelte'
+  import { handleGlobalKey, plain, typing } from './lib/shortcuts.svelte'
   import { api, errorMessage } from './lib/api'
   import { READABLE, formatCount, isComic } from './lib/format'
   import { library } from './lib/library.svelte'
   import { rise } from './lib/motion'
-  import { nav, routeKey } from './lib/nav.svelte'
+  import { allBooks, favorites, nav, readingNow, routeKey, type Route } from './lib/nav.svelte'
   import { scan } from './lib/scan.svelte'
   import type { Book, BookSummary } from './lib/types'
   import { ui } from './lib/uiSettings.svelte'
@@ -145,10 +147,35 @@
     library.changed() // progress changed
   }
 
+  // Ctrl+1…8 jump to the main sections, in sidebar order.
+  const SECTION_KEYS: Record<string, () => Route> = {
+    '1': () => ({ name: 'home' }),
+    '2': allBooks,
+    '3': readingNow,
+    '4': favorites,
+    '5': () => ({ name: 'notes' }),
+    '6': () => ({ name: 'stats' }),
+    '7': () => ({ name: 'authors' }),
+    '8': () => ({ name: 'collections' }),
+    ',': () => ({ name: 'settings' }),
+  }
+
   function onGlobalKey(e: KeyboardEvent) {
-    if (reading || showScan || dialog.current) return
-    const inField = (e.target as HTMLElement | null)?.closest?.('input, select, textarea')
-    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+    if (dialog.current) return
+    // The readers handle keys themselves (their text can live in a frame).
+    if (reading) return
+    if (handleGlobalKey(e)) return
+    if (showScan) return
+    const inField = typing(e)
+    const ctrl = e.ctrlKey || e.metaKey
+    if (ctrl && !e.shiftKey && !e.altKey && SECTION_KEYS[e.key]) {
+      e.preventDefault()
+      selectedId = null
+      nav.jump(SECTION_KEYS[e.key]())
+    } else if (e.key === '/' && plain(e) && !inField) {
+      e.preventDefault()
+      document.getElementById('search')?.focus()
+    } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
       e.preventDefault()
       ui.update({ sidebarCollapsed: !ui.value.sidebarCollapsed })
     } else if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
@@ -283,6 +310,7 @@
 {/if}
 
 <ConfirmDialog />
+<ShortcutsHelp />
 
 {#if notice}
   <div class="notice" role="status" in:rise={{ y: 12, duration: 260 }} out:rise={{ y: 12, duration: 180 }}>
