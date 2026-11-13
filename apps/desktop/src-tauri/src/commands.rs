@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use biblion_core::dictionary::{Definition, DictionaryInfo};
+use biblion_core::backup::RestoreReport;
 use biblion_core::stats::ReadingStats;
 use biblion_core::health::{DuplicateGroup, DuplicateKind, HealthBook, HealthCounts, ProblemKind};
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
@@ -21,6 +22,7 @@ use tauri::ipc::Channel;
 use tauri::State;
 
 use crate::settings::Settings;
+use crate::backup::{self, AutoBackup, BackupSummary};
 use crate::watcher::FolderWatcher;
 
 /// Upper bound for one listing page (the grid asks for 200).
@@ -436,6 +438,123 @@ pub async fn set_cover(state: State<'_, AppState>, id: BookId, image: Vec<u8>) -
     }
     let lib = state.lib.clone();
     blocking(move || lib.set_cover(id, &image)).await
+}
+
+// ── Backups ──────────────────────────────────────────────────────────────
+
+fn data_folder(state: &AppState) -> PathBuf {
+    state.settings_path.parent().map(PathBuf::from).unwrap_or_default()
+}
+
+/// Saves a backup of progress, notes, collections, reading time and
+/// preferences to `path`.
+#[tauri::command]
+pub async fn export_backup(state: State<'_, AppState>, path: PathBuf) -> CmdResult<BackupSummary> {
+    let lib = state.lib.clone();
+    let settings = state.settings.lock().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = backup::build(&lib, &settings)?;
+        backup::write(&file, &path).map_err(|e| CmdError::new("io", format!("Cannot save the backup: {e}")))
+    })
+    .await
+    .map_err(|e| CmdError::new("internal", e.to_string()))?
+}
+
+#[derive(Debug, Serialize)]
+pub struct BackupPreview {
+    pub created_at: i64,
+    pub app_version: String,
+    pub has_settings: bool,
+    /// What restoring would change (nothing is changed yet).
+    pub report: RestoreReport,
+}
+
+#[tauri::command]
+pub async fn inspect_backup(state: State<'_, AppState>, path: PathBuf) -> CmdResult<BackupPreview> {
+    let lib = state.lib.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let file = backup::read(&path).map_err(|m| CmdError::new("invalid_backup", m))?;
+        let report = lib.restore_backup(&file.library, true)?;
+        let s = &file.settings;
+        Ok(BackupPreview {
+            created_at: file.created_at,
+            app_version: file.app_version,
+            has_settings: s.reader.is_some() || s.ui.is_some() || s.ambience.is_some(),
+            report,
+        })
+    })
+    .await
+    .map_err(|e| CmdError::new("internal", e.to_string()))?
+}
+
+/// Merges a backup into the library; with `settings`, its preferences
+/// replace the current ones too.
+#[tauri::command]
+pub async fn restore_backup(state: State<'_, AppState>, path: PathBuf, settings: bool) -> CmdResult<RestoreReport> {
+    let lib = state.lib.clone();
+    let file = tauri::async_runtime::spawn_blocking(move || backup::read(&path))
+        .await
+        .map_err(|e| CmdError::new("internal", e.to_string()))?
+        .map_err(|m| CmdError::new("invalid_backup", m))?;
+    let library = file.library.clone();
+    let report = blocking(move || lib.restore_backup(&library, false)).await?;
+    if settings {
+        update_settings(&state, |s| {
+            let b = &file.settings;
+            if b.reader.is_some() {
+                s.reader = b.reader.clone();
+            }
+            if b.ui.is_some() {
+                s.ui = b.ui.clone();
+            }
+            if b.ambience.is_some() {
+                s.ambience = b.ambience.clone();
+            }
+            Ok(())
+        })?;
+    }
+    tracing::info!(annotations = report.annotations, progress = report.progress, "backup restored");
+    Ok(report)
+}
+
+#[tauri::command]
+pub fn list_auto_backups(state: State<'_, AppState>) -> Vec<AutoBackup> {
+    backup::list_auto(&data_folder(&state))
+}
+
+#[tauri::command]
+pub fn backups_dir(state: State<'_, AppState>) -> PathBuf {
+    backup::auto_dir(&data_folder(&state))
+}
+
+#[tauri::command]
+pub fn get_auto_backup(state: State<'_, AppState>) -> bool {
+    state.settings.lock().unwrap().auto_backup.unwrap_or(true)
+}
+
+#[tauri::command]
+pub fn set_auto_backup(state: State<'_, AppState>, on: bool) -> CmdResult<()> {
+    update_settings(&state, |s| {
+        s.auto_backup = Some(on);
+        Ok(())
+    })?;
+    Ok(())
+}
+
+/// Saves text the UI made (notes as Markdown) to a file the user chose.
+#[tauri::command]
+pub async fn save_text_file(path: PathBuf, contents: String) -> CmdResult<()> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    if !matches!(ext.as_str(), "md" | "txt" | "csv") {
+        return Err(CmdError::new("invalid_argument", "Only .md, .txt and .csv files can be written"));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let tmp = path.with_extension(format!("{ext}.tmp"));
+        std::fs::write(&tmp, contents).and_then(|_| std::fs::rename(&tmp, &path))
+    })
+    .await
+    .map_err(|e| CmdError::new("internal", e.to_string()))?
+    .map_err(|e| CmdError::new("io", format!("Cannot save the file: {e}")))
 }
 
 // ── Reading statistics ───────────────────────────────────────────────────
