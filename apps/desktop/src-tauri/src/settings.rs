@@ -26,6 +26,8 @@ pub struct Settings {
     pub auto_backup: Option<bool>,
     /// The user's music folder, for the ambience.
     pub music_folder: Option<PathBuf>,
+    /// Look up book details on Open Library when asked (off unless turned on).
+    pub online_metadata: Option<bool>,
 }
 
 impl Settings {
@@ -124,7 +126,7 @@ mod tests {
         let path = tmp.path().join("settings.json");
         assert_eq!(Settings::load(&path), Settings::default());
 
-        let s = Settings { roots: vec![PathBuf::from("/books")], reader: Some(serde_json::json!({ "theme": "sepia" })), ui: None, watch_folders: Some(false), auto_backup: None, music_folder: None, ambience: Some(serde_json::json!({ "master": 0.5 })) };
+        let s = Settings { roots: vec![PathBuf::from("/books")], reader: Some(serde_json::json!({ "theme": "sepia" })), ui: None, watch_folders: Some(false), auto_backup: None, music_folder: None, online_metadata: Some(true), ambience: Some(serde_json::json!({ "master": 0.5 })) };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
 
