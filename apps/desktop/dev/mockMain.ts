@@ -3,7 +3,7 @@
 // Open http://localhost:1420/dev/mock.html while `pnpm dev` is running.
 import { mockConvertFileSrc, mockIPC } from '@tauri-apps/api/mocks'
 import { emit } from '@tauri-apps/api/event'
-import { formatOf, handle } from './mockBackend'
+import { SHOWCASE, formatOf, handle } from './mockBackend'
 
 mockConvertFileSrc('linux')
 
@@ -23,7 +23,7 @@ const realFetch = window.fetch.bind(window)
 window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
   if (url.startsWith('book://')) {
-    const sample = formatOf(Number(url.split('/').pop())) === 'pdf' ? 'sample.pdf' : 'sample.epub'
+    const sample = formatOf(Number(url.split('/').pop())) === 'pdf' ? 'sample.pdf' : SHOWCASE ? 'showcase.epub' : 'sample.epub'
     return realFetch(`/dev/fixtures/${sample}`, init)
   }
   // Never reach the real Wiktionary from tests: answer with a fixed entry.

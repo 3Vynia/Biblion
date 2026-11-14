@@ -19,7 +19,82 @@ import type {
 
 const FORMATS: Format[] = ['epub', 'epub', 'epub', 'pdf', 'mobi', 'azw3', 'cbz', 'cbr']
 const WORDS = ['Abyss', 'Garden', 'Storm', 'River', 'Night', 'Island', 'Wolf', 'Silence', 'Border', 'Mirror', 'Labyrinth', 'Salt']
-const AUTHORS = ['Ana Paz', 'Bruno Rulfo', 'Clara Neruda', 'David Le Guin', 'Elena Borges', 'Félix Mistral', 'Gema Cortázar']
+
+// `?showcase` fills the library with well-known books, for screenshots.
+export const SHOWCASE = typeof location !== 'undefined' && new URLSearchParams(location.search).has('showcase')
+type Pick = [title: string, author: string, series: string | null, index: number | null, tags: string[], format: Format]
+const CLASSICS: Pick[] = [
+  ['Neuromancer', 'William Gibson', 'Sprawl', 1, ['Science Fiction', 'Cyberpunk'], 'epub'],
+  ['Count Zero', 'William Gibson', 'Sprawl', 2, ['Science Fiction', 'Cyberpunk'], 'epub'],
+  ['Mona Lisa Overdrive', 'William Gibson', 'Sprawl', 3, ['Science Fiction', 'Cyberpunk'], 'epub'],
+  ['The Little Prince', 'Antoine de Saint-Exupéry', null, null, ['Classics', 'Fable'], 'epub'],
+  ['Dune', 'Frank Herbert', 'Dune', 1, ['Science Fiction'], 'epub'],
+  ['Dune Messiah', 'Frank Herbert', 'Dune', 2, ['Science Fiction'], 'epub'],
+  ['Children of Dune', 'Frank Herbert', 'Dune', 3, ['Science Fiction'], 'epub'],
+  ['Frankenstein', 'Mary Shelley', null, null, ['Classics', 'Horror'], 'epub'],
+  ['Pride and Prejudice', 'Jane Austen', null, null, ['Classics', 'Romance'], 'epub'],
+  ['Moby-Dick', 'Herman Melville', null, null, ['Classics', 'Adventure'], 'epub'],
+  ['The Hobbit', 'J. R. R. Tolkien', 'Middle-earth', 1, ['Fantasy'], 'epub'],
+  ['The Fellowship of the Ring', 'J. R. R. Tolkien', 'Middle-earth', 2, ['Fantasy'], 'epub'],
+  ['The Two Towers', 'J. R. R. Tolkien', 'Middle-earth', 3, ['Fantasy'], 'epub'],
+  ['The Return of the King', 'J. R. R. Tolkien', 'Middle-earth', 4, ['Fantasy'], 'epub'],
+  ['Nineteen Eighty-Four', 'George Orwell', null, null, ['Classics', 'Dystopia'], 'epub'],
+  ['Brave New World', 'Aldous Huxley', null, null, ['Classics', 'Dystopia'], 'mobi'],
+  ['Fahrenheit 451', 'Ray Bradbury', null, null, ['Science Fiction', 'Dystopia'], 'epub'],
+  ['The Martian Chronicles', 'Ray Bradbury', null, null, ['Science Fiction'], 'azw3'],
+  ['Foundation', 'Isaac Asimov', 'Foundation', 1, ['Science Fiction'], 'epub'],
+  ['Foundation and Empire', 'Isaac Asimov', 'Foundation', 2, ['Science Fiction'], 'epub'],
+  ['Second Foundation', 'Isaac Asimov', 'Foundation', 3, ['Science Fiction'], 'epub'],
+  ['A Wizard of Earthsea', 'Ursula K. Le Guin', 'Earthsea', 1, ['Fantasy'], 'epub'],
+  ['The Tombs of Atuan', 'Ursula K. Le Guin', 'Earthsea', 2, ['Fantasy'], 'epub'],
+  ['The Left Hand of Darkness', 'Ursula K. Le Guin', 'Hainish Cycle', 4, ['Science Fiction'], 'epub'],
+  ['The Dispossessed', 'Ursula K. Le Guin', 'Hainish Cycle', 5, ['Science Fiction'], 'epub'],
+  ['Snow Crash', 'Neal Stephenson', null, null, ['Science Fiction', 'Cyberpunk'], 'epub'],
+  ['Do Androids Dream of Electric Sheep?', 'Philip K. Dick', null, null, ['Science Fiction'], 'epub'],
+  ['Solaris', 'Stanisław Lem', null, null, ['Science Fiction'], 'pdf'],
+  ['Hyperion', 'Dan Simmons', 'Hyperion Cantos', 1, ['Science Fiction'], 'epub'],
+  ['The Fall of Hyperion', 'Dan Simmons', 'Hyperion Cantos', 2, ['Science Fiction'], 'epub'],
+  ['Dracula', 'Bram Stoker', null, null, ['Classics', 'Horror'], 'epub'],
+  ['The Picture of Dorian Gray', 'Oscar Wilde', null, null, ['Classics'], 'epub'],
+  ["Alice's Adventures in Wonderland", 'Lewis Carroll', null, null, ['Classics', 'Fantasy'], 'epub'],
+  ['Jane Eyre', 'Charlotte Brontë', null, null, ['Classics', 'Romance'], 'epub'],
+  ['Wuthering Heights', 'Emily Brontë', null, null, ['Classics', 'Romance'], 'epub'],
+  ['The Count of Monte Cristo', 'Alexandre Dumas', null, null, ['Classics', 'Adventure'], 'epub'],
+  ['Crime and Punishment', 'Fyodor Dostoevsky', null, null, ['Classics'], 'epub'],
+  ['War and Peace', 'Leo Tolstoy', null, null, ['Classics', 'History'], 'pdf'],
+  ['The Great Gatsby', 'F. Scott Fitzgerald', null, null, ['Classics'], 'epub'],
+  ['Treasure Island', 'Robert Louis Stevenson', null, null, ['Classics', 'Adventure'], 'epub'],
+  ['The Time Machine', 'H. G. Wells', null, null, ['Classics', 'Science Fiction'], 'epub'],
+  ['The War of the Worlds', 'H. G. Wells', null, null, ['Classics', 'Science Fiction'], 'epub'],
+  ['Kindred', 'Octavia E. Butler', null, null, ['Science Fiction'], 'epub'],
+  ['Parable of the Sower', 'Octavia E. Butler', 'Earthseed', 1, ['Science Fiction'], 'epub'],
+  ['The Name of the Wind', 'Patrick Rothfuss', 'The Kingkiller Chronicle', 1, ['Fantasy'], 'epub'],
+  ['Watchmen', 'Alan Moore', null, null, ['Comics'], 'cbz'],
+  ['Saga, Volume 1', 'Brian K. Vaughan', 'Saga', 1, ['Comics', 'Science Fiction'], 'cbz'],
+  ['Akira, Volume 1', 'Katsuhiro Otomo', 'Akira', 1, ['Manga', 'Cyberpunk'], 'cbr'],
+]
+// Short descriptions, written for the showcase.
+const ABOUT: Record<string, string> = {
+  Dune: 'On the desert planet Arrakis, the only source of the most precious substance in the universe, young Paul Atreides is drawn into a war between great houses, an emperor and the people of the sand.',
+  Neuromancer: 'A burned-out hacker is hired for one last job in a world of orbiting cities and artificial intelligences, in the novel that gave cyberspace its name.',
+  Frankenstein: 'A young scientist gives life to a creature made from the dead, and spends the rest of his days fleeing what he has made.',
+  'The Little Prince': 'A pilot stranded in the Sahara meets a small prince from a faraway asteroid, who tells him about a rose, a fox and the grown-ups he met on his travels.',
+  'The Hobbit': 'Bilbo Baggins, who is very fond of his home and his meals, is swept off on a quest for a treasure guarded by a dragon.',
+  Foundation: 'As a galactic empire begins to fall, a mathematician plans how to shorten the dark age that will follow it.',
+  'Pride and Prejudice': 'Elizabeth Bennet and Mr Darcy misjudge each other at first sight, and slowly learn to see each other better.',
+  Dracula: 'Through letters and diaries, a group of friends follow an ancient count from Transylvania to England, and back again.',
+}
+const YEARS: Record<string, number> = {
+  Neuromancer: 1984, 'Count Zero': 1986, 'Mona Lisa Overdrive': 1988, 'The Little Prince': 1943, Dune: 1965, 'Dune Messiah': 1969,
+  'Children of Dune': 1976, Frankenstein: 1818, 'Pride and Prejudice': 1813, 'Moby-Dick': 1851, 'The Hobbit': 1937,
+  'The Fellowship of the Ring': 1954, 'The Two Towers': 1954, 'The Return of the King': 1955, 'Nineteen Eighty-Four': 1949,
+  'Brave New World': 1932, 'Fahrenheit 451': 1953, Foundation: 1951, 'Foundation and Empire': 1952, 'Second Foundation': 1953,
+  'A Wizard of Earthsea': 1968, Dracula: 1897, 'Snow Crash': 1992, Hyperion: 1989, Solaris: 1961,
+}
+
+const AUTHORS = SHOWCASE
+  ? [...new Set(CLASSICS.map((c) => c.at(1) as string))]
+  : ['Ana Paz', 'Bruno Rulfo', 'Clara Neruda', 'David Le Guin', 'Elena Borges', 'Félix Mistral', 'Gema Cortázar']
 const NOW = 1_800_000_000
 
 interface Row extends BookSummary {
@@ -33,7 +108,27 @@ interface Row extends BookSummary {
 const SUBJECTS = ['Science Fiction', 'History', 'Poetry', 'Fantasy', 'Mystery', 'Philosophy']
 const LANGUAGES = ['en', 'en', 'es', 'fr', 'de']
 
-const rows: Row[] = Array.from({ length: 3000 }, (_, i) => {
+const READING_NOW = new Set([0, 4, 10, 18, 28, 46])
+const FINISHED = new Set([3, 7, 8, 14, 21, 30, 33])
+const rows: Row[] = SHOWCASE
+  ? CLASSICS.map(([title, author, series, index, tags, format], i) => ({
+      id: i + 1,
+      title,
+      authors: [author],
+      series,
+      series_index: index,
+      format,
+      has_cover: false,
+      cover_key: null,
+      progress: FINISHED.has(i) ? 1 : READING_NOW.has(i) ? [0.62, 0.34, 0.81, 0.12, 0.47, 0.25][[...READING_NOW].indexOf(i)] : null,
+      favorite: [3, 4, 8, 21, 46].includes(i),
+      added_at: NOW - i * 86400,
+      read_at: READING_NOW.has(i) || FINISHED.has(i) ? NOW - ((i * 9773) % 900000) : null,
+      finished: FINISHED.has(i),
+      tags,
+      language: 'en',
+    }))
+  : Array.from({ length: 3000 }, (_, i) => {
   const reading = i % 37 === 0
   const done = i % 53 === 0
   return {
@@ -97,6 +192,20 @@ function book(id: number): Book {
   const edited = editedMetadata.get(id)
   const chosenCover = chosenCovers.get(id) ?? null
   const b = mockBook(r, id)
+  if (SHOWCASE) {
+    // Plain, believable details for screenshots.
+    b.metadata = {
+      ...b.metadata,
+      publisher: null,
+      published: YEARS[r.title] ? String(YEARS[r.title]) : null,
+      description: ABOUT[r.title] ?? null,
+      subtitle: null,
+      contributors: [],
+      identifiers: [],
+      rights: null,
+      modified: null,
+    }
+  }
   return edited || chosenCover
     ? { ...b, metadata: edited ?? b.metadata, cover_key: chosenCover ?? b.cover_key, has_cover: b.has_cover || !!chosenCover }
     : b
@@ -163,7 +272,24 @@ const chosenCovers = new Map<number, string>()
 
 // Online sources, made up: "zzz" finds nothing, "offline" fails like a lost
 // connection, and "manga" makes Open Library fail while AniList answers.
+function showcaseSearch(title: string): SourceResults[] {
+  const words = title.toLowerCase().split(/\s+/).filter(Boolean)
+  const hit = CLASSICS.filter(([t]) => words.some((w) => t.toLowerCase().includes(w)))
+  const authors = new Set(hit.map((c) => c[1]))
+  const related = CLASSICS.filter((c) => authors.has(c[1]) && !hit.includes(c))
+  const candidates: MdCandidate[] = [...hit, ...related].slice(0, 6).map(([t, a, series, , tags], i) => ({
+    source: 'openlibrary', key: `/works/OL${900 + i}W`, kind: null, title: t, subtitle: null, alt_titles: [], authors: [a],
+    year: YEARS[t] ?? null, publishers: [], isbn: null, cover: `ol:${700 + i}`, languages: ['en'], pages: 300 + i * 41,
+    editions: [263, 118, 96, 54, 41, 30][i] ?? 12, volumes: null, subjects: [...tags, ...(series ? [series] : [])], description: null, url: null,
+  }))
+  return [
+    { source: 'openlibrary', label: 'Open Library', candidates, error: null },
+    { source: 'anilist', label: 'AniList', candidates: [], error: null },
+  ]
+}
+
 function mdSearch(title: string, author: string): SourceResults[] {
+  if (SHOWCASE) return showcaseSearch(title)
   if (/offline/i.test(title)) throw { code: 'offline', message: 'Could not reach Open Library: no connection' }
   if (/zzz/i.test(title)) return [
     { source: 'openlibrary', label: 'Open Library', candidates: [], error: null },
@@ -205,9 +331,11 @@ async function mockCover(id: number): Promise<ArrayBuffer> {
   grad.addColorStop(1, `hsl(${(id * 47 + 60) % 360} 60% 22%)`)
   g.fillStyle = grad
   g.fillRect(0, 0, 180, 270)
-  g.fillStyle = 'rgb(255 255 255 / 0.85)'
-  g.font = 'bold 22px serif'
-  g.fillText(`Cover ${id}`, 24, 140)
+  if (!SHOWCASE) {
+    g.fillStyle = 'rgb(255 255 255 / 0.85)'
+    g.font = 'bold 22px serif'
+    g.fillText(`Cover ${id}`, 24, 140)
+  }
   return (await canvas.convertToBlob({ type: 'image/jpeg' })).arrayBuffer()
 }
 let autoBackup = true
@@ -231,7 +359,7 @@ const readingLog = new Map<string, { book: number; day: string; seconds: number;
   }
   for (let i = 1; i < 240; i++) {
     if ((i * 7) % 10 < 4) continue // some days without reading
-    const book = 1 + ((i * 37) % 120)
+    const book = 1 + ((i * 37) % Math.min(120, rows.length))
     const day = dayOf(Date.now() - i * 86_400_000)
     readingLog.set(`${book}|${day}`, { book, day, seconds: 300 + ((i * 1013) % 4200), pages: 4 + ((i * 13) % 40) })
   }
