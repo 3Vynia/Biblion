@@ -279,6 +279,20 @@ impl Library {
         Ok(key)
     }
 
+    /// Replaces a book's cover with one the user picked (e.g. from Open
+    /// Library). It gets its own key, so views showing the old thumbnail
+    /// refresh, and rescans keep it. Returns the new key.
+    pub fn replace_cover(&self, id: BookId, image_bytes: &[u8]) -> Result<String> {
+        let book = self.get_book(id)?;
+        let hash = blake3::hash(image_bytes).to_hex();
+        let key = format!("{}-{}", book.fingerprint, &hash[..10]);
+        self.covers.store(&key, image_bytes)?;
+        if let Some(old) = self.user_write(|c| db::set_user_cover_key(c, id, &key))? {
+            self.covers.remove(&old);
+        }
+        Ok(key)
+    }
+
     /// Books of a format without a cover (so the UI can render PDF covers in the background).
     pub fn books_without_cover(&self, format: Format, limit: u32) -> Result<Vec<BookId>> {
         self.read(|c| {
