@@ -26,7 +26,8 @@
     count?: number | null
   }
 
-  const active = $derived(sectionOf(nav.route))
+  // While search results are shown, no section is the current one.
+  const active = $derived(nav.searching ? null : sectionOf(nav.route))
   const collapsed = $derived(ui.value.sidebarCollapsed)
 
   const groups = $derived<{ title?: string; items: Item[] }[]>([
