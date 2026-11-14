@@ -61,3 +61,27 @@ test('in a narrow window the book panel floats and the grid keeps its columns', 
   await page.locator('.scrim').click({ position: { x: 10, y: 500 } })
   await expect(page.locator('.drawer')).toHaveCount(0)
 })
+
+test('going to another section ends the search', async ({ page }) => {
+  await page.goto('/dev/mock.html')
+  const box = page.getByRole('searchbox')
+  const sidebar = page.locator('.sidebar')
+  await box.fill('abyss')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(/abyss|Search/i)
+  // While searching, no section is shown as the current one.
+  await expect(sidebar.locator('[aria-current="page"]')).toHaveCount(0)
+
+  await sidebar.getByRole('button', { name: /Authors/ }).click()
+  await expect(box).toHaveValue('')
+  await expect(page.getByRole('heading', { name: 'Authors', level: 1 })).toBeVisible()
+  await expect(sidebar.locator('[aria-current="page"]')).toContainText('Authors')
+
+  // Also with the keyboard, and when picking the section already shown.
+  await box.fill('abyss')
+  await page.locator('h1').click()
+  await page.keyboard.press('Control+7')
+  await expect(box).toHaveValue('')
+  await box.fill('abyss')
+  await sidebar.getByRole('button', { name: /Authors/ }).click()
+  await expect(box).toHaveValue('')
+})

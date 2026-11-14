@@ -123,8 +123,13 @@ class Nav {
   route = $state<Route>({ name: 'home' })
   #stack: Route[] = []
   canGoBack = $state(false)
+  /** Counts every move, even to the screen already shown, so a search can end on any click. */
+  moves = $state(0)
+  /** True while search results replace the current screen. */
+  searching = $state(false)
 
   go(route: Route) {
+    this.moves++
     if (routeKey(route) === routeKey(this.route)) return
     this.#stack.push(this.route)
     if (this.#stack.length > 50) this.#stack.shift()
@@ -134,12 +139,14 @@ class Nav {
 
   /** Top-level jump from the sidebar: resets the back stack. */
   jump(route: Route) {
+    this.moves++
     this.#stack = []
     this.canGoBack = false
     this.route = route
   }
 
   back() {
+    this.moves++
     const prev = this.#stack.pop()
     if (prev) this.route = prev
     this.canGoBack = this.#stack.length > 0

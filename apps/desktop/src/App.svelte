@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import Sidebar from './components/Sidebar.svelte'
   import BookDetail from './components/BookDetail.svelte'
   import ScanPanel from './components/ScanPanel.svelte'
@@ -50,6 +50,22 @@
     const value = searchInput
     const t = setTimeout(() => (search = value.trim()), SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(t)
+  })
+
+  // Going anywhere (sidebar, Ctrl+1…8, a link, Back) ends the search, so
+  // what is shown always matches what is selected.
+  let lastMove = nav.moves
+  $effect(() => {
+    const moves = nav.moves
+    if (moves === lastMove) return
+    lastMove = moves
+    untrack(() => {
+      searchInput = ''
+      search = ''
+    })
+  })
+  $effect(() => {
+    nav.searching = !!search
   })
 
   // Show new books while a scan runs, without hammering the database.
