@@ -33,6 +33,12 @@
     problem = null
     try {
       status = await api.ttsStatus()
+      const chosen = pickVoice(status.voices, voiceKey, readerSettings.value.voices)
+      // Online voices need neither espeak nor the downloaded model.
+      if (status.voices.find((v) => v.id === chosen)?.online) {
+        await readAloud.start(source(), chosen, readerSettings.value.voiceSpeed, status.sample_rate)
+        return
+      }
       if (!status.espeak) {
         problem = 'Reading aloud needs espeak-ng. Install it with your system’s package manager (it is called “espeak-ng”), then try again.'
         return
@@ -123,9 +129,14 @@
         <select value={readAloud.voice} onchange={(e) => setVoice(e.currentTarget.value)} aria-label="Voice">
           {#each Object.entries(LANG_NAMES) as [key, label] (key)}
             <optgroup {label}>
-              {#each voices.filter((v) => v.lang === key) as v (v.id)}<option value={v.id}>{v.name}</option>{/each}
+              {#each voices.filter((v) => v.lang === key && !v.online) as v (v.id)}<option value={v.id}>{v.name}</option>{/each}
             </optgroup>
           {/each}
+          {#if voices.some((v) => v.online)}
+            <optgroup label="Online · Microsoft">
+              {#each voices.filter((v) => v.online) as v (v.id)}<option value={v.id}>{v.name}</option>{/each}
+            </optgroup>
+          {/if}
         </select>
       </label>
       <div class="speed" role="group" aria-label="Reading pace">

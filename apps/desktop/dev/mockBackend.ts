@@ -160,11 +160,16 @@ let watchFolders = true
 // Reading aloud: the voice starts not downloaded; "speech" is a short tone.
 let ttsInstalled = false
 const TTS_VOICES = [
-  { id: 'ef_dora+af_bella', name: 'Dora · Bella', lang: 'es' },
-  { id: 'ef_dora', name: 'Dora', lang: 'es' },
-  { id: 'em_alex', name: 'Alex', lang: 'es' },
-  { id: 'af_heart', name: 'Heart', lang: 'en-us' },
-  { id: 'bf_emma', name: 'Emma', lang: 'en-gb' },
+  { id: 'ef_dora+af_bella', name: 'Dora · Bella', lang: 'es', online: false },
+  { id: 'ef_dora', name: 'Dora', lang: 'es', online: false },
+  { id: 'em_alex', name: 'Alex', lang: 'es', online: false },
+  { id: 'af_heart', name: 'Heart', lang: 'en-us', online: false },
+  { id: 'bf_emma', name: 'Emma', lang: 'en-gb', online: false },
+]
+let azureRegion: string | null = null
+const AZURE_VOICES = [
+  { id: 'azure:alvaro', name: 'Álvaro (narrator)', lang: 'es', online: true },
+  { id: 'azure:jorge', name: 'Jorge', lang: 'es', online: true },
 ]
 function mockSpeech(text: string): ArrayBuffer {
   const seconds = Math.min(0.6, 0.05 + text.length * 0.004)
@@ -503,10 +508,20 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       chosenCovers.set(args.id as number, `picked-${args.token}`)
       return `picked-${args.token}`
     case 'tts_status':
-      return { installed: ttsInstalled, espeak: true, download_bytes: 353_746_785, sample_rate: 24000, voices: TTS_VOICES }
+      return { installed: ttsInstalled, espeak: true, download_bytes: 353_746_785, sample_rate: 24000, voices: azureRegion ? [...TTS_VOICES, ...AZURE_VOICES] : TTS_VOICES }
+    case 'tts_azure_region':
+      return azureRegion
+    case 'tts_azure_connect':
+      if (args.key === 'bad') throw { code: 'tts', message: 'Microsoft did not accept the key, or it belongs to another region' }
+      azureRegion = (args.region as string).toLowerCase()
+      return null
+    case 'tts_azure_disconnect':
+      azureRegion = null
+      return null
     case 'tts_install':
       return new Promise((resolve) => setTimeout(() => resolve((ttsInstalled = true) && null), 150))
     case 'tts_speak':
+      if ((args.voice as string).startsWith('azure:')) return mockSpeech(args.text as string)
       if (!ttsInstalled) throw { code: 'tts', message: 'The voice is not downloaded yet' }
       return mockSpeech(args.text as string)
     case 'tts_remove':

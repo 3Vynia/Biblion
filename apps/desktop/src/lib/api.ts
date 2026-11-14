@@ -70,6 +70,9 @@ export const api = {
   /** Mono float32 samples at the status' sample rate. */
   ttsSpeak: (text: string, voice: string, speed: number) => invoke<ArrayBuffer>('tts_speak', { text, voice, speed }),
   ttsRemove: () => invoke<void>('tts_remove'),
+  ttsAzureRegion: () => invoke<string | null>('tts_azure_region'),
+  ttsAzureConnect: (key: string, region: string) => invoke<void>('tts_azure_connect', { key, region }),
+  ttsAzureDisconnect: () => invoke<void>('tts_azure_disconnect'),
   coverFromFile: (id: BookId, path: string) => invoke<string>('cover_from_file', { id, path }),
 
   // Online sources (refused by the backend unless turned on).

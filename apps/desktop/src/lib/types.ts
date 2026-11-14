@@ -351,6 +351,8 @@ export interface TtsVoice {
   name: string
   /** espeak language: "es", "en-us", "en-gb". */
   lang: string
+  /** Read by an online service (Microsoft Azure): the text is sent to it. */
+  online: boolean
 }
 
 export interface TtsStatus {
