@@ -2,6 +2,7 @@
   import BookCover from './BookCover.svelte'
   import Icon from './Icon.svelte'
   import OnlineLookup from './OnlineLookup.svelte'
+  import EditDetails from './EditDetails.svelte'
   import { onlineMetadata } from '../lib/onlineMetadata.svelte'
   import { api, errorMessage } from '../lib/api'
   import {
@@ -153,6 +154,7 @@
 
   // ── Open Library ──
   let lookup = $state(false)
+  let editing = $state(false)
   let updated = $state<string | null>(null)
   let updatedTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -178,6 +180,7 @@
 
   function lookedUp(message: string) {
     lookup = false
+    editing = false
     updated = message
     clearTimeout(updatedTimer)
     updatedTimer = setTimeout(() => (updated = null), 5000)
@@ -254,6 +257,9 @@
         {#key heartPop}
           <span class="heart-icon" class:pop={heartPop > 0 && book.favorite}><Icon name="heart" size={18} filled={book.favorite} /></span>
         {/key}
+      </button>
+      <button class="icon-btn" onclick={() => (editing = true)} title="Edit details" aria-label="Edit details">
+        <Icon name="edit" size={17} />
       </button>
       <button class="icon-btn" onclick={findOnline} title="Find details online" aria-label="Find details online">
         <Icon name="globe" size={18} />
@@ -343,6 +349,9 @@
     {#if error}<p class="error small">{error}</p>{/if}
     {#if lookup}
       <OnlineLookup {book} onclose={() => (lookup = false)} ondone={lookedUp} />
+    {/if}
+    {#if editing}
+      <EditDetails {book} onclose={() => (editing = false)} ondone={lookedUp} />
     {/if}
   {/if}
 </aside>

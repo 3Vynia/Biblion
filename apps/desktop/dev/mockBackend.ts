@@ -453,6 +453,12 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
     case 'update_metadata':
       editedMetadata.set(args.id as number, args.metadata as Metadata)
       return null
+    case 'read_image':
+      if (!/\.(jpe?g|png|webp|gif|bmp)$/i.test(args.path as string)) throw { code: 'invalid_argument', message: 'Choose a JPEG, PNG, WebP, GIF or BMP image' }
+      return mockCover(77)
+    case 'cover_from_file':
+      chosenCovers.set(args.id as number, 'user-cover')
+      return 'user-cover'
     case 'ol_search':
     case 'ol_work':
     case 'ol_cover':
