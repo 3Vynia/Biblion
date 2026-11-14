@@ -38,6 +38,8 @@ import type {
   Metadata,
   MdDetails,
   SourceResults,
+  TtsStatus,
+  DownloadProgress,
 } from './types'
 
 export const api = {
@@ -57,6 +59,17 @@ export const api = {
   getBook: (id: BookId) => invoke<Book>('get_book', { id }),
   updateMetadata: (id: BookId, metadata: Metadata) => invoke<void>('update_metadata', { id, metadata }),
   readImage: (path: string) => invoke<ArrayBuffer>('read_image', { path }),
+
+  // Reading aloud.
+  ttsStatus: () => invoke<TtsStatus>('tts_status'),
+  ttsInstall(onProgress: (p: DownloadProgress) => void): Promise<void> {
+    const channel = new Channel<DownloadProgress>()
+    channel.onmessage = onProgress
+    return invoke<void>('tts_install', { onProgress: channel })
+  },
+  /** Mono float32 samples at the status' sample rate. */
+  ttsSpeak: (text: string, voice: string, speed: number) => invoke<ArrayBuffer>('tts_speak', { text, voice, speed }),
+  ttsRemove: () => invoke<void>('tts_remove'),
   coverFromFile: (id: BookId, path: string) => invoke<string>('cover_from_file', { id, path }),
 
   // Online sources (refused by the backend unless turned on).

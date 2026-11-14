@@ -188,6 +188,11 @@ class AmbienceStore {
     return this.#engine.musicPosition()
   }
 
+  /** Lowers the ambience while a voice reads aloud. */
+  duck(on: boolean) {
+    this.#engine.duck(on ? 0.3 : 1, this.playing)
+  }
+
   setMaster(master: number) {
     this.#commit({ ...this.value, master })
   }

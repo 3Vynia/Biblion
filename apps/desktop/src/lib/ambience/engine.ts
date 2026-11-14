@@ -571,6 +571,15 @@ export class AmbienceEngine {
     return this.#c
   }
 
+  /** 1 normally; lower while a voice reads aloud, so it stays clear. */
+  #duck = 1
+
+  duck(level: number, playing: boolean) {
+    this.#duck = level
+    if (!this.#c || !playing || !this.#settings) return
+    this.#master.gain.setTargetAtTime(Math.max(0.0001, this.#settings.master * level), this.#c.ctx.currentTime, 0.35)
+  }
+
   /** Brings the sound in line with the settings (start, stop, levels). */
   async apply(s: AmbienceSettings, playing: boolean) {
     this.#settings = s
@@ -586,7 +595,7 @@ export class AmbienceEngine {
     }
     const c = this.#ensure()
     if (c.ctx.state !== 'running') await c.ctx.resume().catch(() => {})
-    this.#master.gain.setTargetAtTime(Math.max(0.0001, s.master), c.ctx.currentTime, FADE)
+    this.#master.gain.setTargetAtTime(Math.max(0.0001, s.master * this.#duck), c.ctx.currentTime, FADE)
 
     if (s.soundscape.on) {
       if (this.#soundscape) this.#soundscape.update(s.soundscape)
