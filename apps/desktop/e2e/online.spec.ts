@@ -21,7 +21,7 @@ test('looking a book up is off until you allow it', async ({ page }) => {
   await expect(ask).toContainText('openlibrary.org')
   await ask.getByRole('button', { name: 'Cancel' }).click()
   await expect(page.getByRole('dialog', { name: 'Find details online' })).toHaveCount(0)
-  expect(await calls(page, 'ol_search')).toHaveLength(0)
+  expect(await calls(page, 'md_search')).toHaveLength(0)
 
   await panel.getByRole('button', { name: 'Find details online' }).click()
   await ask.getByRole('button', { name: 'Turn on and search' }).click()
@@ -43,7 +43,9 @@ test('pick a match, choose what to take, and confirm', async ({ page }) => {
 
   const lookup = page.getByRole('dialog', { name: 'Find details online' })
   await expect(lookup.getByLabel('Title')).toHaveValue(title)
-  await expect(lookup.locator('.result')).toHaveCount(5)
+  // Every source in one list: five books and two from AniList.
+  await expect(lookup.locator('.result')).toHaveCount(7)
+  await expect(lookup.locator('.result').first()).toContainText('Open Library')
   await expect(lookup.locator('.result img').first()).toBeVisible()
   await lookup.locator('.result').first().click()
 
@@ -72,7 +74,7 @@ test('pick a match, choose what to take, and confirm', async ({ page }) => {
   const saved = (await calls(page, 'update_metadata'))[0].args.metadata as { description: string; tags: string[] }
   expect(saved.description).toContain('there and back again')
   expect(saved.tags).toContain('Dwarves')
-  expect((await calls(page, 'ol_apply_cover'))[0].args.coverId).toBe(9000)
+  expect((await calls(page, 'md_apply_cover'))[0].args.token).toBe('ol:9000')
   await expect(panel).toContainText('A long journey there and back again')
 })
 
@@ -93,4 +95,46 @@ test('no matches and lost connections are explained', async ({ page }) => {
   await page.keyboard.press('Escape')
   await expect(lookup).toHaveCount(0)
   await expect(panel).toBeVisible()
+})
+
+test('manga and manhwa come from AniList, and one source failing does not hide the other', async ({ page }) => {
+  const panel = await openFirstBook(page)
+  await panel.getByRole('button', { name: 'Find details online' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Turn on and search' }).click()
+  const lookup = page.getByRole('dialog', { name: 'Find details online' })
+  await lookup.getByLabel('Title', { exact: true }).fill('Solo manga')
+  await lookup.getByLabel('Title', { exact: true }).press('Enter')
+
+  await expect(lookup.locator('.source-error')).toContainText('Could not reach Open Library')
+  await expect(lookup.getByRole('button', { name: /Open Library/ })).toBeDisabled()
+  await expect(lookup.locator('.result')).toHaveCount(2)
+  const manhwa = lookup.locator('.result', { hasText: 'Manhwa' })
+  await expect(manhwa).toContainText('AniList')
+  await expect(manhwa).toContainText('14 volumes')
+  await manhwa.click()
+
+  // The description comes with the search; the kind is offered as a subject.
+  const field = (name: string) => lookup.locator('.field', { hasText: name })
+  await expect(field('Description')).toContainText('Hunters fight monsters')
+  await expect(field('Subjects')).toContainText('+ Manhwa')
+  await expect(lookup.getByRole('button', { name: /View on AniList/ })).toBeVisible()
+  await field('Subjects').click()
+  await lookup.getByRole('button', { name: 'Update book…' }).click()
+  await expect(page.getByRole('alertdialog')).toContainText('from AniList')
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Update book' }).click()
+  await expect(panel.getByRole('status')).toContainText('from AniList')
+  const tags = ((await calls(page, 'update_metadata'))[0].args.metadata as { tags: string[] }).tags
+  expect(tags).toContain('Manhwa')
+})
+
+test('results can be narrowed to one source', async ({ page }) => {
+  const panel = await openFirstBook(page)
+  await panel.getByRole('button', { name: 'Find details online' }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Turn on and search' }).click()
+  const lookup = page.getByRole('dialog', { name: 'Find details online' })
+  await expect(lookup.locator('.result')).toHaveCount(7)
+  await lookup.locator('.sources').getByRole('button', { name: /AniList/ }).click()
+  await expect(lookup.locator('.result')).toHaveCount(2)
+  await lookup.locator('.sources').getByRole('button', { name: /^All/ }).click()
+  await expect(lookup.locator('.result')).toHaveCount(7)
 })

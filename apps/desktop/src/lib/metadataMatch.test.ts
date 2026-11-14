@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { applyChanges, proposedChanges, type FieldId } from './metadataMatch'
-import type { Metadata, OlCandidate } from './types'
+import { applyChanges, proposedChanges, rankCandidates, titleLikeness, type FieldId } from './metadataMatch'
+import type { MdCandidate, Metadata, SourceResults } from './types'
 
 const meta = (m: Partial<Metadata> = {}): Metadata => ({
   title: 'The hobbit',
@@ -17,15 +17,21 @@ const meta = (m: Partial<Metadata> = {}): Metadata => ({
   ...m,
 })
 
-const hobbit: OlCandidate = {
+const hobbit: MdCandidate = {
+  source: 'openlibrary',
   key: '/works/OL27482W',
+  kind: null,
+  alt_titles: [],
+  volumes: null,
+  description: null,
+  url: null,
   title: 'The Hobbit',
   subtitle: 'or There and Back Again',
   authors: ['Tolkien, J.R.R.'],
   year: 1937,
   publishers: [],
   isbn: null,
-  cover_id: 1,
+  cover: 'ol:1',
   languages: ['en'],
   pages: 310,
   editions: 482,
@@ -62,5 +68,48 @@ describe('proposed changes', () => {
     expect(out.description).toBeNull()
     expect(out.publisher).toBe('Allen & Unwin')
     expect(m.tags).toEqual(['Fantasy'])
+  })
+})
+
+describe('results from every source', () => {
+  const c = (source: string, title: string, extra: Partial<MdCandidate> = {}): MdCandidate => ({ ...hobbit, source, key: title, title, cover: null, authors: [], ...extra })
+  const results = (r: Record<string, MdCandidate[]>): SourceResults[] =>
+    Object.entries(r).map(([source, candidates]) => ({ source, label: source, candidates, error: null }))
+
+  it('puts the closest title first, whatever its source', () => {
+    const list = rankCandidates(
+      results({
+        openlibrary: [c('openlibrary', 'Solo Leveling Companion'), c('openlibrary', 'Leveling Up Your Life')],
+        anilist: [c('anilist', 'Na Honjaman Level Up', { alt_titles: ['Solo Leveling'], kind: 'Manhwa' })],
+      }),
+      'Solo Leveling',
+      '',
+    )
+    expect(list.map((x) => x.source)).toEqual(['anilist', 'openlibrary', 'openlibrary'])
+  })
+
+  it('prefers a shared author, then a cover', () => {
+    const list = rankCandidates(
+      results({ a: [c('a', 'Crossed'), c('a', 'Crossed', { cover: 'x' }), c('a', 'Crossed', { authors: ['Garth Ennis'] })] }),
+      'Crossed',
+      'Ennis',
+    )
+    expect(list.map((x) => [x.authors.length, x.cover])).toEqual([
+      [1, null],
+      [0, 'x'],
+      [0, null],
+    ])
+  })
+
+  it('compares titles by their words', () => {
+    expect(titleLikeness('The Hobbit', 'the hobbit!')).toBe(1)
+    expect(titleLikeness('Crossed', 'Badlands')).toBe(0)
+    expect(titleLikeness('', 'x')).toBe(0)
+  })
+
+  it('offers the kind of book as a subject', () => {
+    const manhwa = { ...hobbit, kind: 'Manhwa', subjects: ['Action', 'manhwa'] }
+    const tags = proposedChanges(meta({ tags: [] }), manhwa, null).find((x) => x.field === 'tags')
+    expect(tags?.added).toEqual(['Manhwa', 'Action'])
   })
 })

@@ -1,6 +1,8 @@
 <script lang="ts">
-  // Finds a book on Open Library and lets the user pick, field by field, what
-  // to take from it. Nothing changes until they confirm.
+  // Finds a book in every online source at once (Open Library, AniList) and
+  // lets the user pick, field by field, what to take from it. Nothing changes
+  // until they confirm.
+  import { openUrl } from '@tauri-apps/plugin-opener'
   import { onDestroy, onMount, untrack } from 'svelte'
   import BookCover from './BookCover.svelte'
   import Icon from './Icon.svelte'
@@ -8,9 +10,9 @@
   import { confirm, dialog } from '../lib/dialog.svelte'
   import { formatCount, plainText, plural } from '../lib/format'
   import { library } from '../lib/library.svelte'
-  import { applyChanges, proposedChanges, type FieldId } from '../lib/metadataMatch'
+  import { applyChanges, proposedChanges, rankCandidates, type FieldId } from '../lib/metadataMatch'
   import { rise } from '../lib/motion'
-  import type { Book, OlCandidate, OlWork } from '../lib/types'
+  import type { Book, MdCandidate, MdDetails, SourceResults } from '../lib/types'
 
   interface Props {
     book: Book
@@ -29,9 +31,10 @@
 
   let searching = $state(false)
   let searchError = $state<string | null>(null)
-  let results = $state<OlCandidate[] | null>(null)
-  let picked = $state<OlCandidate | null>(null)
-  let work = $state<OlWork | null>(null)
+  let answers = $state<SourceResults[] | null>(null)
+  let only = $state<string | null>(null)
+  let picked = $state<MdCandidate | null>(null)
+  let work = $state<MdDetails | null>(null)
   let workState = $state<'loading' | 'done' | 'failed'>('loading')
   let chosen = $state(new Set<FieldId>())
   let useCover = $state(false)
@@ -42,17 +45,17 @@
   let firstField: HTMLInputElement
 
   // ── Cover previews, fetched one by one and kept as blob URLs ──
-  let covers = $state<Record<number, string | 'none'>>({})
+  let covers = $state<Record<string, string | 'none'>>({})
   const urls: string[] = []
   let alive = true
 
-  async function loadCovers(list: OlCandidate[]) {
+  async function loadCovers(list: MdCandidate[]) {
     for (const c of list) {
       if (!alive) return
-      const id = c.cover_id
+      const id = c.cover
       if (!id || covers[id]) continue
       try {
-        const bytes = await api.olCover(id)
+        const bytes = await api.mdCover(id)
         const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }))
         urls.push(url)
         covers[id] = url
@@ -74,24 +77,32 @@
     searchError = null
     picked = null
     try {
-      results = await api.olSearch(title, author, isbn)
-      loadCovers(results)
+      answers = await api.mdSearch(title, author, isbn)
+      only = null
+      // Covers of the best matches first.
+      loadCovers(rankCandidates(answers, title, author))
+      const failed = answers.filter((a) => a.error)
+      if (failed.length === answers.length && failed.length) searchError = failed[0].error
     } catch (err) {
       searchError = errorMessage(err)
-      results = null
+      answers = null
     } finally {
       searching = false
     }
   }
 
-  async function pick(c: OlCandidate) {
+  const ranked = $derived(answers ? rankCandidates(answers, title, author) : [])
+  const results = $derived(answers ? ranked.filter((c) => !only || c.source === only) : null)
+  const sourceLabel = (source: string) => answers?.find((a) => a.source === source)?.label ?? source
+
+  async function pick(c: MdCandidate) {
     picked = c
     work = null
     workState = 'loading'
-    useCover = !book.has_cover && !!c.cover_id
+    useCover = !book.has_cover && !!c.cover
     chosen = new Set(proposedChanges(m, c, null).filter((ch) => ch.suggested).map((ch) => ch.field))
     try {
-      const w = await api.olWork(c.key)
+      const w = await api.mdDetails(c.source, c.key)
       if (picked !== c) return
       work = w
       workState = 'done'
@@ -119,7 +130,7 @@
     const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]
     const ok = await confirm({
       title: `Update “${m.title ?? 'this book'}”?`,
-      message: `Its ${list} will come from Open Library. The book file itself is not changed, and Biblion keeps these details after a rescan.`,
+      message: `Its ${list} will come from ${sourceLabel(picked.source)}. The book file itself is not changed, and Biblion keeps these details after a rescan.`,
       confirmLabel: 'Update book',
     })
     if (!ok) return
@@ -128,9 +139,9 @@
     try {
       const fields = changes.filter((c) => chosen.has(c.field))
       if (fields.length) await api.updateMetadata(book.id, applyChanges(m, changes, chosen))
-      if (useCover && picked.cover_id) await api.olApplyCover(book.id, picked.cover_id)
+      if (useCover && picked.cover) await api.mdApplyCover(book.id, picked.cover)
       library.changed()
-      ondone(`Updated ${count} ${plural(count, 'detail')} from Open Library`)
+      ondone(`Updated ${count} ${plural(count, 'detail')} from ${sourceLabel(picked.source)}`)
     } catch (err) {
       saveError = errorMessage(err)
     } finally {
@@ -166,8 +177,15 @@
     search()
   })
 
-  const meta = (c: OlCandidate) =>
-    [c.year, c.editions > 1 ? `${formatCount(c.editions)} editions` : null, c.pages ? `${formatCount(c.pages)} pages` : null].filter(Boolean).join(' · ')
+  const meta = (c: MdCandidate) =>
+    [
+      c.year,
+      c.volumes ? `${formatCount(c.volumes)} ${plural(c.volumes, 'volume')}` : null,
+      c.editions > 1 ? `${formatCount(c.editions)} editions` : null,
+      c.pages ? `${formatCount(c.pages)} pages` : null,
+    ]
+      .filter(Boolean)
+      .join(' · ')
 </script>
 
 <div use:portal>
@@ -186,7 +204,7 @@
       <div class="badge"><Icon name="globe" size={20} /></div>
       <div>
         <h2 id="lookup-title">Find details online</h2>
-        <p>From Open Library. Only what you type below is sent.</p>
+        <p>From Open Library and AniList, all at once. Only what you type below is sent.</p>
       </div>
       <button class="ghost close" onclick={onclose} aria-label="Close"><Icon name="close" size={18} /></button>
     </header>
@@ -224,16 +242,16 @@
             <span class="arrow" class:on={useCover} aria-hidden="true"><Icon name="chevron-right" size={22} /></span>
             <figure>
               <div class="cover-frame new" class:on={useCover}>
-                {#if c.cover_id && covers[c.cover_id] && covers[c.cover_id] !== 'none'}
-                  <img src={covers[c.cover_id]} alt="Cover from Open Library" />
-                {:else if c.cover_id && !covers[c.cover_id]}
+                {#if c.cover && covers[c.cover] && covers[c.cover] !== 'none'}
+                  <img src={covers[c.cover]} alt="Cover from {sourceLabel(c.source)}" />
+                {:else if c.cover && !covers[c.cover]}
                   <span class="shimmer"></span>
                 {:else}
                   <span class="no-cover">No cover</span>
                 {/if}
               </div>
-              <label class="check" class:disabled={!c.cover_id || covers[c.cover_id] === 'none'}>
-                <input type="checkbox" bind:checked={useCover} disabled={!c.cover_id || covers[c.cover_id] === 'none'} />
+              <label class="check" class:disabled={!c.cover || covers[c.cover] === 'none'}>
+                <input type="checkbox" bind:checked={useCover} disabled={!c.cover || covers[c.cover] === 'none'} />
                 <span class="box"><Icon name="check" size={12} strokeWidth={3} /></span>
                 Use this cover
               </label>
@@ -241,6 +259,13 @@
           </div>
 
           <div class="fields">
+            <div class="tags-row">
+              <span class="src {c.source}">{sourceLabel(c.source)}</span>
+              {#if c.kind}<span class="kind">{c.kind}</span>{/if}
+              {#if c.url}
+                <button class="ghost open-src" onclick={() => c.url && openUrl(c.url)}>View on {sourceLabel(c.source)} <Icon name="chevron-right" size={12} /></button>
+              {/if}
+            </div>
             <h3>{c.title}{#if c.authors.length}<span class="h-by">{c.authors.join(', ')}</span>{/if}</h3>
             {#each changes as ch, i (ch.field)}
               {@const on = chosen.has(ch.field)}
@@ -262,7 +287,7 @@
               </label>
             {:else}
               {#if workState !== 'loading'}
-                <p class="nothing"><Icon name="check" size={16} /> This book already has everything Open Library knows about it{c.cover_id ? ', apart from the cover' : ''}.</p>
+                <p class="nothing"><Icon name="check" size={16} /> This book already has everything {sourceLabel(c.source)} knows about it{c.cover ? ', apart from the cover' : ''}.</p>
               {/if}
             {/each}
             {#if workState === 'loading'}
@@ -272,7 +297,7 @@
             {/if}
           </div>
         </div>
-      {:else if searching && !results}
+      {:else if searching && !answers}
         <div class="grid">
           {#each Array(6) as _, i (i)}<div class="result skeleton"><span class="shimmer"></span></div>{/each}
         </div>
@@ -282,27 +307,43 @@
           <p>{searchError}</p>
           <button onclick={() => search()}>Try again</button>
         </div>
-      {:else if results && results.length === 0}
+      {:else if answers && ranked.length === 0}
         <div class="empty">
           <Icon name="search" size={28} />
           <p>Nothing found. Try a shorter title, or only the author’s last name.</p>
         </div>
       {:else if results}
-        <p class="count">{results.length} {plural(results.length, 'match', 'matches')}. Pick the one that is this book.</p>
+        <div class="sources">
+          <button class:on={!only} onclick={() => (only = null)}>All <span>{ranked.length}</span></button>
+          {#each answers ?? [] as a (a.source)}
+            <button class:on={only === a.source} class:failed={!!a.error} disabled={!!a.error} title={a.error ?? undefined} onclick={() => (only = a.source)}>
+              <span class="dot {a.source}"></span>{a.label} <span>{a.error ? '!' : a.candidates.length}</span>
+            </button>
+          {/each}
+          <span class="pick-hint">Pick the one that is this book.</span>
+        </div>
+        {#each (answers ?? []).filter((a) => a.error) as a (a.source)}
+          <p class="source-error"><Icon name="globe" size={13} /> {a.error}</p>
+        {/each}
         <div class="grid" class:dim={searching}>
-          {#each results as c, i (c.key)}
+          {#each results as c, i (c.source + c.key)}
             <button class="result" onclick={() => pick(c)} in:rise={{ y: 10, delay: i * 35, duration: 240 }}>
               <span class="thumb">
-                {#if c.cover_id && covers[c.cover_id] && covers[c.cover_id] !== 'none'}
-                  <img src={covers[c.cover_id]} alt="" />
-                {:else if c.cover_id && !covers[c.cover_id]}
+                {#if c.cover && covers[c.cover] && covers[c.cover] !== 'none'}
+                  <img src={covers[c.cover]} alt="" />
+                {:else if c.cover && !covers[c.cover]}
                   <span class="shimmer"></span>
                 {:else}
                   <Icon name="reading" size={20} />
                 {/if}
               </span>
               <span class="result-text">
+                <span class="tags-row">
+                  <span class="src {c.source}">{sourceLabel(c.source)}</span>
+                  {#if c.kind}<span class="kind">{c.kind}</span>{/if}
+                </span>
                 <strong>{c.title}</strong>
+                {#if c.alt_titles[0]}<span class="alt">{c.alt_titles[0]}</span>{/if}
                 {#if c.authors.length}<span class="by">{c.authors.slice(0, 2).join(', ')}</span>{/if}
                 <span class="meta">{meta(c)}</span>
                 {#if c.subjects.length}
@@ -528,6 +569,126 @@
     height: 100%;
     object-fit: cover;
     animation: fade 300ms ease both;
+  }
+
+  .sources {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .sources button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 11px;
+    border-radius: 14px;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  .sources button span:last-child {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+
+  .sources button.on {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: var(--accent-soft);
+    font-weight: 600;
+  }
+
+  .sources button.failed {
+    opacity: 0.6;
+  }
+
+  .pick-hint {
+    margin-left: auto;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+
+  .source-error {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: -4px 0 10px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* Each source keeps one colour, in the filter and on its results. */
+  .dot,
+  .src {
+    --src: var(--muted);
+  }
+
+  .openlibrary {
+    --src: #3b82f6;
+  }
+
+  .anilist {
+    --src: #02a9ff;
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--src);
+  }
+
+  .tags-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+    margin-bottom: 3px;
+  }
+
+  .src,
+  .kind {
+    padding: 1px 7px;
+    border-radius: 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .src {
+    color: var(--src);
+    background: color-mix(in srgb, var(--src) 14%, transparent);
+  }
+
+  .src.openlibrary {
+    --src: #5b8def;
+  }
+
+  .kind {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .alt {
+    font-size: 11.5px;
+    color: var(--muted);
+    font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .open-src {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+    padding: 2px 6px;
+    font-size: 12px;
+    color: var(--muted);
   }
 
   .result-text {

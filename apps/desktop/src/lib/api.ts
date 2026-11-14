@@ -36,8 +36,8 @@ import type {
   Shelf,
   TagEntry,
   Metadata,
-  OlCandidate,
-  OlWork,
+  MdDetails,
+  SourceResults,
 } from './types'
 
 export const api = {
@@ -59,13 +59,13 @@ export const api = {
   readImage: (path: string) => invoke<ArrayBuffer>('read_image', { path }),
   coverFromFile: (id: BookId, path: string) => invoke<string>('cover_from_file', { id, path }),
 
-  // Open Library (refused by the backend unless turned on).
+  // Online sources (refused by the backend unless turned on).
   getOnlineMetadata: () => invoke<boolean>('get_online_metadata'),
   setOnlineMetadata: (on: boolean) => invoke<void>('set_online_metadata', { on }),
-  olSearch: (title: string, author: string, isbn: string) => invoke<OlCandidate[]>('ol_search', { title, author, isbn }),
-  olWork: (key: string) => invoke<OlWork>('ol_work', { key }),
-  olCover: (coverId: number) => invoke<ArrayBuffer>('ol_cover', { coverId }),
-  olApplyCover: (id: BookId, coverId: number) => invoke<string>('ol_apply_cover', { id, coverId }),
+  mdSearch: (title: string, author: string, isbn: string) => invoke<SourceResults[]>('md_search', { title, author, isbn }),
+  mdDetails: (source: string, key: string) => invoke<MdDetails>('md_details', { source, key }),
+  mdCover: (token: string) => invoke<ArrayBuffer>('md_cover', { token }),
+  mdApplyCover: (id: BookId, token: string) => invoke<string>('md_apply_cover', { id, token }),
   stats: () => invoke<LibraryStats>('stats'),
   listAuthors: (prefix: string | null, offset: number, limit: number) =>
     invoke<Page<AuthorEntry>>('list_authors', { prefix, offset, limit }),
