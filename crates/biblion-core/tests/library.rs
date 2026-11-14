@@ -777,3 +777,50 @@ fn a_chosen_cover_replaces_the_old_one_and_survives_rescans() {
     assert_eq!(lib.get_book(id).unwrap().cover_key.as_deref(), Some(key.as_str()));
     assert!(lib.replace_cover(9999, &cover_jpeg(1)).is_err());
 }
+
+fn write_cbz(path: &Path) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    zip.start_file("p1.jpg", SimpleFileOptions::default()).unwrap();
+    zip.write_all(&cover_jpeg(5)).unwrap();
+    zip.finish().unwrap();
+}
+
+#[test]
+fn comics_are_named_from_their_files_and_folders() {
+    let tmp = tempfile::tempdir().unwrap();
+    let comics = tmp.path().join("Comics");
+    let badlands = comics.join("Crossed/Badlands (Garth Ennis y Jacen Burrows)");
+    write_cbz(&badlands.join("Crossed - Badlands 002 [TM][CRG].cbz"));
+    write_cbz(&badlands.join("Crossed - Badlands 010 [TM][CRG].cbz"));
+    write_cbz(&comics.join("Crossed/Crossed (Garth Ennis y Jacen Burrows)/Crossed Annual 2013.cbz"));
+    let data = tmp.path().join("data");
+    let check = |lib: &Library| {
+        let issues = lib.list_books(&BookQuery { series: Some("Crossed - Badlands".into()), sort: SortBy::Series, limit: 10, ..Default::default() }).unwrap();
+        let titles: Vec<_> = issues.items.iter().map(|b| (b.title.clone(), b.series_index)).collect();
+        assert_eq!(titles, [("Crossed - Badlands 002".to_owned(), Some(2.0)), ("Crossed - Badlands 010".to_owned(), Some(10.0))]);
+        assert_eq!(issues.items[0].authors, ["Garth Ennis", "Jacen Burrows"]);
+        let annual = &find(lib, "annual")[0];
+        assert_eq!(annual.series.as_deref(), Some("Crossed"));
+        assert_eq!(lib.get_book(annual.id).unwrap().metadata.published.as_deref(), Some("2013"));
+    };
+    {
+        let lib = Library::open(&data).unwrap();
+        scan(&lib, &comics);
+        check(&lib);
+    }
+    // Comics indexed the old way ("Crossed" as the author) are fixed on upgrade.
+    {
+        let conn = rusqlite::Connection::open(data.join("library.db")).unwrap();
+        conn.execute_batch(
+            "DELETE FROM book_authors;
+             UPDATE books SET series = NULL, series_index = NULL, authors = 'Crossed', author_sort = 'crossed',
+               title = 'Badlands 002 [TM][CRG]' WHERE title = 'Crossed - Badlands 002';
+             UPDATE books SET series = NULL, series_index = NULL, authors = '', author_sort = '' WHERE series IS NOT NULL;
+             PRAGMA user_version = 6;",
+        )
+        .unwrap();
+    }
+    let lib = Library::open(&data).unwrap();
+    check(&lib);
+}

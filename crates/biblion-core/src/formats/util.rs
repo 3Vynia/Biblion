@@ -218,6 +218,167 @@ pub fn fill_from_path(m: &mut Metadata, path: &Path) {
     }
 }
 
+/// Comics rarely carry metadata, so their names are read closely: series,
+/// number and year from "Crossed - Badlands 012 [scan group].cbr",
+/// "Solo Leveling v03", "Crossed #12 (2011)" or "Crossed Annual 2013", and
+/// the authors from a folder named "Badlands (Garth Ennis y Jacen Burrows)".
+/// What the file itself says (ComicInfo.xml) always wins.
+pub fn fill_comic_from_path(m: &mut Metadata, path: &Path) {
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    let name = parse_comic_name(stem);
+    if m.title.as_deref().is_none_or(|t| t.trim().is_empty()) {
+        m.title = Some(name.title.clone());
+    }
+    // "One Piece/Tomo 07.cbz": the number is in the name, the series is the folder.
+    let series = name.series.or_else(|| name.number.and(series_folder(path)));
+    if m.series.is_none() && series.is_some() {
+        m.series = series;
+        m.series_index = name.number;
+    }
+    if m.published.is_none() {
+        m.published = name.year;
+    }
+    if m.authors.is_empty() {
+        m.authors = authors_in_folder(path);
+    }
+    if m.authors.is_empty() {
+        if let Some(a) = author_from_folder(path) {
+            m.authors.push(a);
+        }
+    }
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct ComicName {
+    pub title: String,
+    pub series: Option<String>,
+    pub number: Option<f64>,
+    pub year: Option<String>,
+}
+
+const ISSUE_MARKERS: &[&str] = &[
+    "#", "vol", "vol.", "volume", "v", "v.", "tomo", "t", "t.", "no", "no.", "nº", "n°", "num", "num.", "issue", "cap", "cap.",
+    "capitulo", "capítulo", "chapter", "ch", "ch.", "ep", "ep.", "episode", "episodio", "part", "parte",
+];
+const ONE_SHOTS: &[&str] = &["annual", "anual", "special", "especial", "one-shot", "oneshot"];
+
+fn is_year(s: &str) -> bool {
+    s.len() == 4 && s.parse::<u32>().is_ok_and(|y| (1900..=2099).contains(&y))
+}
+
+/// "12" → 12, "03a" → 3.1, "3.5" → 3.5. At most four digits, so years
+/// and long numbers in titles are left alone.
+fn issue_number(s: &str) -> Option<f64> {
+    let digits: String = s.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
+    let rest = &s[digits.len()..];
+    let int_len = digits.split('.').next().unwrap_or("").len();
+    if digits.is_empty() || int_len == 0 || int_len > 4 || digits.ends_with('.') {
+        return None;
+    }
+    let n: f64 = digits.parse().ok()?;
+    match rest.chars().collect::<Vec<_>>()[..] {
+        [] => Some(n),
+        // "03a", "03b": parts of one issue.
+        [c] if c.is_ascii_lowercase() && !digits.contains('.') => Some(n + f64::from(c as u8 - b'a' + 1) / 10.0),
+        _ => None,
+    }
+}
+
+/// Reads a comic file name (without extension).
+pub fn parse_comic_name(stem: &str) -> ComicName {
+    // Scan-group tags go: "[TM][DI][por …][CRG]". A year in brackets stays.
+    let mut year = None;
+    let mut clean = String::with_capacity(stem.len());
+    let mut depth = 0usize;
+    let mut group = String::new();
+    for c in stem.replace('_', " ").chars() {
+        match c {
+            '[' | '(' | '{' => {
+                depth += 1;
+                if depth == 1 {
+                    group.clear();
+                    continue;
+                }
+            }
+            ']' | ')' | '}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0 {
+                    if year.is_none() {
+                        year = group.split(|c: char| !c.is_ascii_digit()).find(|w| is_year(w)).map(str::to_owned);
+                    }
+                    clean.push(' ');
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        if depth == 0 {
+            clean.push(c);
+        } else {
+            group.push(c);
+        }
+    }
+    let title = collapse_ws(&clean);
+    let title = title.trim_matches(|c: char| c == '-' || c == ',' || c.is_whitespace()).to_owned();
+    let mut words: Vec<&str> = title.split_whitespace().collect();
+    let mut out = ComicName { title: title.clone(), year, ..Default::default() };
+    let Some(&last) = words.last() else { return out };
+
+    // "Crossed Annual 2013": a one-shot of a year, not issue 2013.
+    if is_year(last) && words.len() >= 3 && ONE_SHOTS.contains(&words[words.len() - 2].to_lowercase().as_str()) {
+        out.year.get_or_insert_with(|| last.to_owned());
+        out.series = series_from(&words[..words.len() - 2]);
+        return out;
+    }
+
+    // The number, maybe glued to its marker: "#12", "v03", "Vol.3", "ch45".
+    let lower = last.to_lowercase();
+    let glued = ISSUE_MARKERS.iter().filter(|m| m.len() < lower.len()).find_map(|m| lower.strip_prefix(m).and_then(issue_number));
+    // A bare year is not an issue number ("Batman 1989").
+    let number = issue_number(&lower).filter(|_| !is_year(&lower)).or(glued);
+    let Some(number) = number else { return out };
+    words.pop();
+    if words.last().is_some_and(|w| ISSUE_MARKERS.contains(&w.to_lowercase().as_str())) {
+        words.pop();
+    }
+    out.series = series_from(&words);
+    out.number = Some(number);
+    out
+}
+
+fn series_from(words: &[&str]) -> Option<String> {
+    let s = words.join(" ");
+    let s = s.trim_end_matches(|c: char| matches!(c, '-' | ',' | ':' | '#' | '.') || c.is_whitespace()).trim();
+    (!s.is_empty() && s.chars().any(char::is_alphabetic)).then(|| s.to_owned())
+}
+
+/// The folder's name as a series: without "(authors)" and not a category.
+fn series_folder(path: &Path) -> Option<String> {
+    let dir = path.parent()?.file_name()?.to_str()?;
+    let name = match dir.trim_end().strip_suffix(')').and_then(|d| d.rsplit_once('(')) {
+        Some((before, _)) => before.trim(),
+        None => dir.trim(),
+    };
+    let folded = fold_diacritics(&name.to_lowercase());
+    (!name.is_empty() && !name.starts_with(['.', '_']) && !NOT_NAMES.contains(&folded.as_str())).then(|| name.to_owned())
+}
+
+/// Authors named in brackets at the end of a folder:
+/// "Badlands (Garth Ennis y Jacen Burrows)", "Saga (by Brian K. Vaughan & Fiona Staples)".
+pub fn authors_in_folder(path: &Path) -> Vec<String> {
+    let Some(dir) = path.parent().and_then(|d| d.file_name()).and_then(|d| d.to_str()) else { return Vec::new() };
+    let Some(inner) = dir.trim_end().strip_suffix(')').and_then(|d| d.rsplit_once('(')).map(|(_, i)| i.trim()) else {
+        return Vec::new();
+    };
+    let inner = ["de ", "by ", "por ", "von ", "par "].iter().find_map(|p| inner.strip_prefix(p)).unwrap_or(inner);
+    let mut names = vec![inner.to_owned()];
+    for sep in [", ", " y ", " and ", " & ", " e ", " und ", " et "] {
+        names = names.iter().flat_map(|n| n.split(sep).map(str::to_owned).collect::<Vec<_>>()).collect();
+    }
+    let names: Vec<String> = names.into_iter().map(|n| n.trim().to_owned()).filter(|n| !n.is_empty()).collect();
+    if !names.is_empty() && names.iter().all(|n| looks_like_name(n)) { names } else { Vec::new() }
+}
+
 /// Words that may start in lower case inside a person's name.
 const NAME_PARTICLES: &[&str] = &[
     "de", "del", "la", "las", "los", "y", "e", "i", "van", "von", "der", "den", "da", "di", "do", "du", "le", "dos", "das", "al", "bin",
@@ -390,6 +551,59 @@ mod tests {
     fn resolve_paths() {
         assert_eq!(resolve_zip_path("OEBPS/text", "../images/c%20v.jpg#x"), "OEBPS/images/c v.jpg");
         assert_eq!(resolve_zip_path("", "cover.jpg"), "cover.jpg");
+    }
+
+    #[test]
+    fn comic_names() {
+        let p = |s: &str| {
+            let n = parse_comic_name(s);
+            (n.series, n.number, n.year)
+        };
+        let s = |x: &str| Some(x.to_owned());
+        assert_eq!(p("Crossed - Badlands 012 [TM][DI][por Agamotto y Ntellez11][CRG]"), (s("Crossed - Badlands"), Some(12.0), None));
+        assert_eq!(parse_comic_name("Crossed - Badlands 012 [TM][CRG]").title, "Crossed - Badlands 012");
+        assert_eq!(p("Crossed 3D 01 (Avatar 2011) [ntellez@CRG 17 Aniversario]"), (s("Crossed 3D"), Some(1.0), s("2011")));
+        assert_eq!(p("Crossed 00"), (s("Crossed"), Some(0.0), None));
+        assert_eq!(p("Crossed - Wish You Were Here 03b"), (s("Crossed - Wish You Were Here"), Some(3.2), None));
+        assert_eq!(p("Crossed Annual 2013 [TD]"), (s("Crossed"), None, s("2013")));
+        assert_eq!(p("Crossed Special 2014"), (s("Crossed"), None, s("2014")));
+        assert_eq!(p("Solo Leveling v03"), (s("Solo Leveling"), Some(3.0), None));
+        assert_eq!(p("Solo Leveling Vol. 3"), (s("Solo Leveling"), Some(3.0), None));
+        assert_eq!(p("One Piece - Capitulo 1045"), (s("One Piece"), Some(1045.0), None));
+        assert_eq!(p("Saga #54 (2018)"), (s("Saga"), Some(54.0), s("2018")));
+        // A number without a series: the folder gives it.
+        assert_eq!(p("Tomo_07"), (None, Some(7.0), None));
+        assert_eq!(p("12"), (None, Some(12.0), None));
+        // Not issue numbers.
+        assert_eq!(p("1984"), (None, None, None));
+        assert_eq!(p("Batman 1989"), (None, None, None));
+        assert_eq!(p("Watchmen"), (None, None, None));
+        assert_eq!(p("Maus [Integral]").0, None);
+    }
+
+    #[test]
+    fn comic_authors_from_the_folder() {
+        let a = |p: &str| authors_in_folder(Path::new(p));
+        assert_eq!(a("/c/Crossed/Badlands (Garth Ennis y Jacen Burrows)/x.cbr"), ["Garth Ennis", "Jacen Burrows"]);
+        assert_eq!(a("/c/Saga (by Brian K. Vaughan & Fiona Staples)/x.cbz"), ["Brian K. Vaughan", "Fiona Staples"]);
+        assert!(a("/c/Crossed 3D/x.cbr").is_empty());
+        assert!(a("/c/Batman (2016)/x.cbr").is_empty());
+        assert!(a("/c/Crossed (de G.Ennis y J.Burrows)/x.cbr").is_empty(), "initials are not full names");
+
+        let mut m = Metadata::default();
+        fill_comic_from_path(&mut m, Path::new("/c/Badlands (Garth Ennis y Jacen Burrows)/Crossed - Badlands 001 [CRG].cbr"));
+        assert_eq!((m.title.as_deref(), m.series.as_deref(), m.series_index), (Some("Crossed - Badlands 001"), Some("Crossed - Badlands"), Some(1.0)));
+        assert_eq!(m.authors, ["Garth Ennis", "Jacen Burrows"], "not \"Crossed\" from the hyphen");
+        let mut m = Metadata::default();
+        fill_comic_from_path(&mut m, Path::new("/c/One Piece (Eiichiro Oda)/Tomo 07.cbz"));
+        assert_eq!((m.series.as_deref(), m.series_index, m.authors.clone()), (Some("One Piece"), Some(7.0), vec!["Eiichiro Oda".to_owned()]));
+        let mut m = Metadata::default();
+        fill_comic_from_path(&mut m, Path::new("/c/Comics/07.cbz"));
+        assert_eq!(m.series, None, "a category folder is not a series");
+        // ComicInfo.xml wins.
+        let mut m = Metadata { series: Some("Real".into()), series_index: Some(5.0), title: Some("Real #5".into()), ..Default::default() };
+        fill_comic_from_path(&mut m, Path::new("/c/Other 09.cbz"));
+        assert_eq!((m.title.as_deref(), m.series.as_deref(), m.series_index), (Some("Real #5"), Some("Real"), Some(5.0)));
     }
 
     #[test]
