@@ -111,3 +111,63 @@ test('books added in quick succession are announced together', async ({ page }) 
   await page.clock.runFor(61_000)
   await expect(status).toHaveText('6 new books in your library', { useInnerText: true })
 })
+
+test('settings are grouped and can be searched', async ({ page }) => {
+  await page.getByRole('button', { name: 'Settings' }).click()
+  const index = page.getByRole('navigation', { name: 'Settings sections' })
+  await expect(index.locator('.group')).toHaveText(['General', 'Reading', 'Your data', 'Help'])
+
+  // "/" searches the settings while they are open.
+  await page.locator('h1').click()
+  await page.keyboard.press('/')
+  await expect(page.getByRole('searchbox', { name: 'Search settings' })).toBeFocused()
+  await page.keyboard.type('wiktionary')
+  await expect(index.getByRole('button')).toHaveText(['Privacy & online'])
+  await expect(page.locator('#privacy')).toBeVisible()
+  await expect(page.locator('#appearance')).toBeHidden()
+
+  await page.keyboard.press('Control+a')
+  await page.keyboard.type('zzz')
+  await expect(index).toContainText('No settings match “zzz”.')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('')
+  await expect(page.locator('#appearance')).toBeVisible()
+  // Esc cleared the search but did not leave Settings.
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
+})
+
+test('each section says what it is set to', async ({ page }) => {
+  await page.getByRole('button', { name: 'Settings' }).click()
+  const summary = page.locator('#library .summary')
+  await expect(summary).toContainText('watching on')
+  await page.getByText('Watch folders for changes').click()
+  await expect(summary).toContainText('watching off')
+  await expect(page.locator('#privacy .summary')).toHaveText('Only single words go online, to Wiktionary')
+  await page.getByText('Look words up online').click()
+  await expect(page.locator('#privacy .summary')).toHaveText('Nothing leaves this computer')
+})
+
+test('removing a library folder asks first', async ({ page }) => {
+  const removed = () =>
+    page.evaluate(() => (window as unknown as { __calls: { cmd: string }[] }).__calls.filter((c) => c.cmd === 'remove_root').length)
+  await page.getByRole('button', { name: 'Settings' }).click()
+  const folder = page.locator('#library .folder').first()
+  await folder.getByRole('button', { name: 'Remove' }).click()
+  const dialog = page.getByRole('alertdialog')
+  await expect(dialog).toContainText('Stop using this folder?')
+  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  expect(await removed()).toBe(0)
+  await folder.getByRole('button', { name: 'Remove' }).click()
+  await dialog.getByRole('button', { name: 'Remove folder' }).click()
+  await expect.poll(removed).toBe(1)
+})
+
+test('the index highlights the section you jumped to', async ({ page }) => {
+  await page.getByRole('button', { name: 'Settings' }).click()
+  const index = page.getByRole('navigation', { name: 'Settings sections' })
+  for (const name of ['Ambience', 'Backup', 'About', 'Library']) {
+    await index.getByRole('button', { name, exact: true }).click()
+    await page.waitForTimeout(700)
+    await expect(index.locator('[aria-current="true"]')).toHaveText(name)
+  }
+})

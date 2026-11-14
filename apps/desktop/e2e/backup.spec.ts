@@ -49,6 +49,6 @@ test('a file that is not a backup is refused', async ({ page }) => {
 })
 
 test('automatic backups can be turned off', async ({ page }) => {
-  await page.getByText('Automatic backups').click()
+  await page.getByText('Automatic backups', { exact: true }).click()
   await expect.poll(async () => (await calls(page, 'set_auto_backup')).at(-1)?.args.on).toBe(false)
 })

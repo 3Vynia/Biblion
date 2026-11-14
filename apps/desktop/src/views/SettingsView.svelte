@@ -8,6 +8,7 @@
   import { ambience } from '../lib/ambience/store.svelte'
   import Icon, { type IconName } from '../components/Icon.svelte'
   import Switch from '../components/Switch.svelte'
+  import SettingRow from '../components/SettingRow.svelte'
   import SettingsPanel from '../reader/SettingsPanel.svelte'
   import AmbiencePanel from '../components/AmbiencePanel.svelte'
   import ShortcutList from '../components/ShortcutList.svelte'
@@ -16,6 +17,7 @@
   import { api, errorMessage } from '../lib/api'
   import { formatBytes, formatCount, formatDate, formatDuration, plural } from '../lib/format'
   import { library } from '../lib/library.svelte'
+  import { nav } from '../lib/nav.svelte'
   import { rise } from '../lib/motion'
   import { scan } from '../lib/scan.svelte'
   import { ACCENTS, ui, type AccentId, type CoverSize, type ThemeMode } from '../lib/uiSettings.svelte'
@@ -27,24 +29,60 @@
 
   let { roots, onrootschange }: Props = $props()
 
-  const SECTIONS: { id: string; label: string; icon: IconName }[] = [
-    { id: 'appearance', label: 'Appearance', icon: 'sparkle' },
-    { id: 'library', label: 'Library', icon: 'folder' },
-    { id: 'reading', label: 'Reading', icon: 'reading' },
-    { id: 'ambience', label: 'Ambience', icon: 'sound' },
-    { id: 'backup', label: 'Backup', icon: 'save' },
-    { id: 'keyboard', label: 'Keyboard', icon: 'keyboard' },
-    { id: 'about', label: 'About', icon: 'info' },
+  interface Section {
+    id: string
+    label: string
+    icon: IconName
+    /** Extra words the search box should find this section by. */
+    keywords: string
+  }
+
+  const GROUPS: { title: string; sections: Section[] }[] = [
+    {
+      title: 'General',
+      sections: [
+        { id: 'appearance', label: 'Appearance', icon: 'sparkle', keywords: 'theme dark light system accent colour color cover size titles captions animations motion sidebar compact' },
+        { id: 'library', label: 'Library', icon: 'folder', keywords: 'folders scan rescan watch startup new books health duplicates' },
+      ],
+    },
+    {
+      title: 'Reading',
+      sections: [
+        { id: 'reading', label: 'Reading', icon: 'reading', keywords: 'font size line spacing margins justify hyphenation theme day sepia night console preview' },
+        { id: 'dictionaries', label: 'Dictionaries', icon: 'define', keywords: 'define word stardict freedict lookup' },
+        { id: 'ambience', label: 'Ambience', icon: 'sound', keywords: 'sound soundscape rain fireplace sea scenes music folder songs shuffle sleep timer page turn volume' },
+      ],
+    },
+    {
+      title: 'Your data',
+      sections: [
+        { id: 'backup', label: 'Backup', icon: 'save', keywords: 'restore export notes markdown automatic copy highlights progress' },
+        { id: 'privacy', label: 'Privacy & online', icon: 'globe', keywords: 'internet network wiktionary online offline' },
+      ],
+    },
+    {
+      title: 'Help',
+      sections: [
+        { id: 'keyboard', label: 'Keyboard', icon: 'keyboard', keywords: 'shortcuts keys hotkeys' },
+        { id: 'about', label: 'About', icon: 'info', keywords: 'version data folder' },
+      ],
+    },
   ]
+  const SECTIONS = GROUPS.flatMap((g) => g.sections)
 
   let scroller: HTMLDivElement
   let current = $state('appearance')
+  let query = $state('')
   let folderError = $state<string | null>(null)
   let dataDir = $state('')
   let copied = $state(false)
   let dictionaries = $state<DictionaryInfo[]>([])
   let dictError = $state<string | null>(null)
   let installing = $state(false)
+
+  const terms = $derived(query.trim().toLowerCase().split(/\s+/).filter(Boolean))
+  const matches = (s: Section) => terms.every((t) => `${s.label} ${s.keywords}`.toLowerCase().includes(t))
+  const shown = $derived(new Set(SECTIONS.filter(matches).map((s) => s.id)))
 
   async function addDictionary() {
     dictError = null
@@ -162,22 +200,47 @@
     api.listAutoBackups().then((v) => (autoBackups = v)).catch(() => {})
     api.dataDir().then((d) => (dataDir = d)).catch(() => {})
     api.listDictionaries().then((d) => (dictionaries = d)).catch(() => {})
-    // Highlight the section being read in the side index.
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
-        if (visible[0]) current = visible[0].target.id
-      },
-      { root: scroller, rootMargin: '0px 0px -60% 0px' },
-    )
-    scroller.querySelectorAll('section[id]').forEach((s) => observer.observe(s))
-    return () => observer.disconnect()
   })
+
+  // Highlight the section being read in the side index: the last one whose
+  // heading has reached the top, or the last one when scrolled to the end.
+  function track() {
+    const sections = [...scroller.querySelectorAll<HTMLElement>('section[id]:not([hidden])')]
+    if (!sections.length) return
+    const top = scroller.scrollTop + scroller.offsetTop + 40
+    const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4
+    let id = sections[0].id
+    for (const s of sections) if (s.offsetTop <= top) id = s.id
+    current = atEnd ? sections.at(-1)!.id : id
+  }
+
+  // While a jump scrolls, the clicked section stays highlighted.
+  let target: string | null = null
+  let settle: ReturnType<typeof setTimeout> | undefined
+  function onScroll() {
+    clearTimeout(settle)
+    if (target) settle = setTimeout(() => (target = null), 150)
+    else track()
+  }
 
   function goTo(id: string) {
     // Scroll only this panel: scrollIntoView would also shift the whole window.
     const section = scroller.querySelector<HTMLElement>(`#${id}`)
-    if (section) scroller.scrollTo({ top: section.offsetTop - scroller.offsetTop - 12, behavior: 'smooth' })
+    if (!section) return
+    current = target = id
+    const top = section.offsetTop - scroller.offsetTop - 12
+    if (Math.abs(scroller.scrollTop - top) < 2) target = null
+    scroller.scrollTo({ top, behavior: 'smooth' })
+  }
+
+  function onSearchKey(e: KeyboardEvent) {
+    if (e.key === 'Escape' && query) {
+      e.stopPropagation()
+      query = ''
+    } else if (e.key === 'Enter') {
+      const first = SECTIONS.find((s) => shown.has(s.id))
+      if (first) goTo(first.id)
+    }
   }
 
   async function addFolder() {
@@ -194,6 +257,13 @@
 
   async function removeFolder(path: string) {
     folderError = null
+    const ok = await confirm({
+      title: 'Stop using this folder?',
+      message: `Biblion stops looking for books in ${path}. The files themselves are not touched, and you can add the folder again later.`,
+      confirmLabel: 'Remove folder',
+      danger: true,
+    })
+    if (!ok) return
     try {
       onrootschange(await api.removeRoot(path))
     } catch (e) {
@@ -213,83 +283,133 @@
     { id: 'dark', label: 'Dark' },
   ]
   const SIZES: { id: CoverSize; label: string; w: number }[] = [
-    { id: 'small', label: 'Small', w: 16 },
-    { id: 'medium', label: 'Medium', w: 21 },
-    { id: 'large', label: 'Large', w: 27 },
+    { id: 'small', label: 'Small', w: 10 },
+    { id: 'medium', label: 'Medium', w: 13 },
+    { id: 'large', label: 'Large', w: 16 },
   ]
 
   const r = $derived(readerSettings.value)
   const readerTheme = $derived(THEMES[r.theme])
+  const onOff = (on: boolean) => (on ? 'on' : 'off')
+
+  // One line under each heading: what this section is set to right now.
+  const summary = $derived<Record<string, string>>({
+    appearance: [
+      `${THEME_OPTIONS.find((t) => t.id === ui.value.theme)?.label} theme`,
+      `${ACCENTS[ui.value.accent].label.toLowerCase()} accent`,
+      `${ui.value.coverSize} covers`,
+    ].join(' · '),
+    library: [
+      `${roots.length} ${plural(roots.length, 'folder')}`,
+      library.stats ? `${formatCount(library.stats.books)} books` : null,
+      `watching ${onOff(watchFolders)}`,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    reading: `${THEMES[r.theme].label} · ${FONTS[r.font].label} font · ${r.fontSize}% text`,
+    dictionaries: `${dictionaries.length} offline · online lookups ${onOff(ui.value.onlineDictionary)}`,
+    ambience: ambience.playing ? `Playing · ${ambience.active?.name ?? 'your mix'}` : 'Not playing',
+    backup: autoBackup
+      ? `Automatic backups on${autoBackups[0] ? ` · last ${formatDate(autoBackups[0].created_at)}` : ''}`
+      : 'Automatic backups off',
+    privacy: ui.value.onlineDictionary ? 'Only single words go online, to Wiktionary' : 'Nothing leaves this computer',
+    keyboard: 'Press ? anywhere to see them',
+    about: 'Biblion 0.1.0',
+  })
 </script>
 
 <div class="settings">
   <nav class="index" aria-label="Settings sections" in:rise={{ y: 6 }}>
     <span class="subtitle">Preferences</span>
     <h1>Settings</h1>
-    {#each SECTIONS as s (s.id)}
-      <button class="ghost" class:current={current === s.id} onclick={() => goTo(s.id)}>
-        <Icon name={s.icon} size={16} />
-        {s.label}
-      </button>
-    {/each}
-  </nav>
-
-  <div class="scroller" bind:this={scroller}>
-    <!-- Appearance -->
-    <section id="appearance" in:rise={{ delay: 40 }}>
-      <h2>Appearance</h2>
-
-      <h3>Theme</h3>
-      <div class="themes" role="radiogroup" aria-label="Theme">
-        {#each THEME_OPTIONS as t (t.id)}
-          <button
-            class="theme-card"
-            class:active={ui.value.theme === t.id}
-            role="radio"
-            aria-checked={ui.value.theme === t.id}
-            onclick={() => ui.update({ theme: t.id })}
-          >
-            <span class="mock {t.id}" aria-hidden="true">
-              <span class="mock-side"></span>
-              <span class="mock-main">
-                <span class="mock-bar"></span>
-                <span class="mock-books"><i></i><i></i><i></i></span>
-              </span>
-            </span>
-            <span class="theme-label">{t.label}</span>
-          </button>
-        {/each}
-      </div>
-
-      <h3>Accent colour</h3>
-      <div class="accents" role="radiogroup" aria-label="Accent colour">
-        {#each Object.entries(ACCENTS) as [id, a] (id)}
-          <button
-            class="swatch"
-            class:active={ui.value.accent === id}
-            style:--c={ui.dark ? a.dark : a.light}
-            role="radio"
-            aria-checked={ui.value.accent === id}
-            title={a.label}
-            aria-label={a.label}
-            onclick={() => ui.update({ accent: id as AccentId })}
-          >
-            {#if ui.value.accent === id}<Icon name="check" size={14} strokeWidth={3} />{/if}
-          </button>
-        {/each}
-      </div>
-
-      <h3>Cover size</h3>
-      <div class="segmented">
-        {#each SIZES as s (s.id)}
-          <button class:active={ui.value.coverSize === s.id} onclick={() => ui.update({ coverSize: s.id })}>
-            <span class="size-preview" style:width="{s.w}px" style:height="{s.w * 1.5}px"></span>
+    <label class="find">
+      <Icon name="search" size={15} />
+      <input
+        id="settings-search"
+        type="search"
+        placeholder="Search settings"
+        aria-label="Search settings"
+        bind:value={query}
+        onkeydown={onSearchKey}
+      />
+      {#if !query}<kbd>/</kbd>{/if}
+    </label>
+    {#each GROUPS as g (g.title)}
+      {#if g.sections.some((s) => shown.has(s.id))}
+        <span class="group">{g.title}</span>
+        {#each g.sections.filter((s) => shown.has(s.id)) as s (s.id)}
+          <button class="ghost" class:current={current === s.id} aria-current={current === s.id ? 'true' : undefined} onclick={() => goTo(s.id)}>
+            <Icon name={s.icon} size={16} />
             {s.label}
           </button>
         {/each}
-      </div>
+      {/if}
+    {/each}
+    {#if shown.size === 0}<p class="no-match">No settings match “{query.trim()}”.</p>{/if}
+  </nav>
 
+  <div class="scroller" bind:this={scroller} onscroll={onScroll}>
+    {#snippet head(id: string, title: string)}
+      <header>
+        <h2>{title}</h2>
+        <p class="summary">{summary[id]}</p>
+      </header>
+    {/snippet}
+
+    <!-- Appearance -->
+    <section id="appearance" hidden={!shown.has('appearance')} in:rise={{ delay: 40 }}>
+      {@render head('appearance', 'Appearance')}
       <div class="card">
+        <SettingRow label="Theme" description="Follow the system, or keep Biblion light or dark." wide>
+          <div class="themes" role="radiogroup" aria-label="Theme">
+            {#each THEME_OPTIONS as t (t.id)}
+              <button
+                class="theme-card"
+                class:active={ui.value.theme === t.id}
+                role="radio"
+                aria-checked={ui.value.theme === t.id}
+                onclick={() => ui.update({ theme: t.id })}
+              >
+                <span class="mock {t.id}" aria-hidden="true">
+                  <span class="mock-side"></span>
+                  <span class="mock-main">
+                    <span class="mock-bar"></span>
+                    <span class="mock-books"><i></i><i></i><i></i></span>
+                  </span>
+                </span>
+                <span class="theme-label">{t.label}</span>
+              </button>
+            {/each}
+          </div>
+        </SettingRow>
+        <SettingRow label="Accent colour" description="Buttons, progress and highlights in the library.">
+          <div class="accents" role="radiogroup" aria-label="Accent colour">
+            {#each Object.entries(ACCENTS) as [id, a] (id)}
+              <button
+                class="swatch"
+                class:active={ui.value.accent === id}
+                style:--c={ui.dark ? a.dark : a.light}
+                role="radio"
+                aria-checked={ui.value.accent === id}
+                title={a.label}
+                aria-label={a.label}
+                onclick={() => ui.update({ accent: id as AccentId })}
+              >
+                {#if ui.value.accent === id}<Icon name="check" size={13} strokeWidth={3} />{/if}
+              </button>
+            {/each}
+          </div>
+        </SettingRow>
+        <SettingRow label="Cover size" description="How big books are in the grid.">
+          <div class="segmented">
+            {#each SIZES as s (s.id)}
+              <button class:active={ui.value.coverSize === s.id} onclick={() => ui.update({ coverSize: s.id })}>
+                <span class="size-preview" style:width="{s.w}px" style:height="{s.w * 1.5}px"></span>
+                {s.label}
+              </button>
+            {/each}
+          </div>
+        </SettingRow>
         <Switch
           label="Titles under covers"
           description="Show the title and author below each cover in the grid."
@@ -297,26 +417,26 @@
           onchange={(v) => ui.update({ showCaptions: v })}
         />
         <Switch
-          label="Animations"
-          description="Transitions, hover effects and counters. The system “reduce motion” setting is always respected."
-          checked={ui.value.animations}
-          onchange={(v) => ui.update({ animations: v })}
-        />
-        <Switch
           label="Compact sidebar"
           description="Show only icons in the sidebar. Toggle it any time with Ctrl+B."
           checked={ui.value.sidebarCollapsed}
           onchange={(v) => ui.update({ sidebarCollapsed: v })}
         />
+        <Switch
+          label="Animations"
+          description="Transitions, hover effects and counters. The system “reduce motion” setting is always respected."
+          checked={ui.value.animations}
+          onchange={(v) => ui.update({ animations: v })}
+        />
       </div>
     </section>
 
     <!-- Library -->
-    <section id="library">
-      <h2>Library</h2>
+    <section id="library" hidden={!shown.has('library')}>
+      {@render head('library', 'Library')}
       <h3>Folders</h3>
-      <p class="hint">Biblion looks for EPUB, PDF, MOBI, AZW3, CBZ and CBR files in these folders and all their subfolders.</p>
       <div class="card">
+        <p class="hint">Biblion looks for EPUB, PDF, MOBI, AZW3, CBZ and CBR files in these folders and all their subfolders.</p>
         {#each roots as root (root)}
           <div class="folder" in:rise={{ y: 4, duration: 200 }}>
             <Icon name="folder" size={17} />
@@ -333,9 +453,7 @@
           {#if scan.running}
             <button onclick={() => scan.cancel()}>Cancel scan</button>
           {:else}
-            <button disabled={roots.length === 0} onclick={() => scan.start(true)} title="Read every file again"
-              >Full rescan</button
-            >
+            <button disabled={roots.length === 0} onclick={() => scan.start(true)} title="Read every file again">Full rescan</button>
             <button class="primary" disabled={roots.length === 0} onclick={() => scan.start()}>Scan now</button>
           {/if}
         </div>
@@ -346,32 +464,40 @@
               ? `Looking for books… ${formatCount(scan.found)} found`
               : `Reading ${formatCount(scan.done)} of ${formatCount(scan.total)}…`}
           </p>
-        {:else if scan.report}
-          <p class="hint">
-            Last scan: {formatCount(scan.report.found)} books in {formatDuration(scan.report.elapsed_ms)},
-            {formatCount(scan.report.added)} new{#if scan.report.errors}, {formatCount(scan.report.errors)} could not be read fully{/if}.
-          </p>
         {/if}
       </div>
+
+      <h3>Keeping up to date</h3>
       <div class="card">
-        <Switch
-          label="Look for new books at startup"
-          description="A quick check of the folders each time Biblion opens. Unchanged files are skipped, so it takes seconds even for large libraries."
-          checked={ui.value.scanOnStartup}
-          onchange={(v) => ui.update({ scanOnStartup: v })}
-        />
         <Switch
           label="Watch folders for changes"
           description="Books you add, move or delete in these folders show up on their own, a few seconds later. Files still downloading are read again once they settle."
           checked={watchFolders}
           onchange={setWatch}
         />
+        <Switch
+          label="Look for new books at startup"
+          description="A quick check each time Biblion opens. Unchanged files are skipped, so it takes seconds even for large libraries."
+          checked={ui.value.scanOnStartup}
+          onchange={(v) => ui.update({ scanOnStartup: v })}
+        />
+        {#if scan.report && !scan.running}
+          <SettingRow
+            label="Last scan"
+            description="{formatCount(scan.report.found)} books in {formatDuration(scan.report.elapsed_ms)}, {formatCount(scan.report.added)} new{scan.report.errors
+              ? `, ${formatCount(scan.report.errors)} could not be read fully`
+              : ''}."
+          />
+        {/if}
+        <SettingRow label="Library health" description="Duplicates, missing files and books that could not be read.">
+          <button onclick={() => nav.jump({ name: 'health' })}><Icon name="pulse" size={15} /> Open</button>
+        </SettingRow>
       </div>
     </section>
 
     <!-- Reading -->
-    <section id="reading">
-      <h2>Reading</h2>
+    <section id="reading" hidden={!shown.has('reading')}>
+      {@render head('reading', 'Reading')}
       <p class="hint">Defaults for every book. You can also change them while reading, from the Aa button.</p>
       <div class="reading">
         <div
@@ -396,7 +522,7 @@
           style:hyphens={r.hyphenate ? 'auto' : 'manual'}
           lang="en"
         >
-          <span class="preview-label" style:color={readerTheme.muted}>Preview</span>
+          <span class="preview-label" style:color={readerTheme.muted}>Live preview</span>
           <h4>Chapter One</h4>
           <p>
             It was a quiet evening, and the library smelled of paper and rain. Somewhere between the shelves a page turned,
@@ -405,8 +531,11 @@
           <p>She chose a volume at random, opened it near the middle, and began to read.</p>
         </div>
       </div>
+    </section>
 
-      <h3>Dictionaries</h3>
+    <!-- Dictionaries -->
+    <section id="dictionaries" hidden={!shown.has('dictionaries')}>
+      {@render head('dictionaries', 'Dictionaries')}
       <p class="hint">
         Select a word while reading and choose <em>Define</em>. Offline dictionaries in StarDict format are searched first;
         free ones for many languages are available from
@@ -432,54 +561,56 @@
           <span class="hint inline">.ifo, .zip, .tar.gz or .tar.xz</span>
         </div>
       </div>
-      <div class="card">
-        <Switch
-          label="Look words up online"
-          description="When no offline dictionary knows a word, ask Wiktionary. Only the word is sent."
-          checked={ui.value.onlineDictionary}
-          onchange={(v) => ui.update({ onlineDictionary: v })}
-        />
-      </div>
+      <p class="hint see-also">
+        Online lookups are in <button class="text-link" onclick={() => goTo('privacy')}>Privacy &amp; online</button>.
+      </p>
     </section>
 
     <!-- Ambience -->
-    <section id="ambience">
-      <h2>Ambience</h2>
+    <section id="ambience" hidden={!shown.has('ambience')}>
+      {@render head('ambience', 'Ambience')}
       <p class="hint">
         A soundscape made live for reading: it never repeats, follows the time of day and answers your page turns. Mix in
-        rain, a fireplace or the sea, save your own scenes, and let it fade out with the sleep timer.
+        rain, a fireplace or the sea, add your own music, and let it fade out with the sleep timer.
       </p>
       <div class="card ambience-card">
-        <AmbiencePanel />
+        <AmbiencePanel tabs />
       </div>
     </section>
 
-    <!-- About -->
-    <section id="backup">
-      <h2>Backup</h2>
+    <!-- Backup -->
+    <section id="backup" hidden={!shown.has('backup')}>
+      {@render head('backup', 'Backup')}
       <p class="hint">
         Your highlights, notes, reading progress, collections and reading time live in Biblion’s database. A backup keeps
         them safe, and brings them back on this computer or another one, even if your books moved.
       </p>
+      <div class="actions">
+        <button class="action primary" disabled={!!backupBusy} onclick={saveBackup}>
+          <Icon name="save" size={20} />
+          <strong>Back up now…</strong>
+          <small>Everything in one small file.</small>
+        </button>
+        <button class="action" disabled={!!backupBusy} onclick={() => restoreBackup(null)}>
+          <Icon name="clock" size={20} />
+          <strong>Restore from a file…</strong>
+          <small>See what changes before anything does.</small>
+        </button>
+        <button class="action" disabled={!!backupBusy} onclick={exportAllNotes}>
+          <Icon name="quote" size={20} />
+          <strong>Export notes as Markdown…</strong>
+          <small>Every highlight and note, book by book.</small>
+        </button>
+      </div>
+      {#if backupMessage}<p class="hint backup-message" role="status">{backupMessage}</p>{/if}
+      {#if backupError}<p class="error">{backupError}</p>{/if}
       <div class="card">
-        <div class="buttons">
-          <button class="primary" disabled={!!backupBusy} onclick={saveBackup}><Icon name="save" size={15} /> Back up now…</button>
-          <button disabled={!!backupBusy} onclick={() => restoreBackup(null)}>Restore from a file…</button>
-          <span class="spacer"></span>
-          <button disabled={!!backupBusy} onclick={exportAllNotes} title="Every highlight and note, book by book">
-            <Icon name="quote" size={15} /> Export notes as Markdown…
-          </button>
-        </div>
-        {#if backupMessage}<p class="hint backup-message" role="status">{backupMessage}</p>{/if}
-        {#if backupError}<p class="error">{backupError}</p>{/if}
         <Switch
           label="Also restore preferences"
           description="Reading, appearance and ambience settings from the backup replace yours. Library folders never change."
           checked={restorePrefs}
           onchange={(v) => (restorePrefs = v)}
         />
-      </div>
-      <div class="card">
         <Switch
           label="Automatic backups"
           description="A copy every day in Biblion’s data folder. The last seven are kept."
@@ -505,14 +636,32 @@
       </div>
     </section>
 
-    <section id="keyboard">
-      <h2>Keyboard</h2>
-      <p class="hint">Press <kbd>?</kbd> anywhere to see these.</p>
+    <!-- Privacy -->
+    <section id="privacy" hidden={!shown.has('privacy')}>
+      {@render head('privacy', 'Privacy & online')}
+      <p class="hint">
+        Biblion works offline. It has no account and sends no usage data. These are the only things that can reach the
+        internet, and only if you allow them.
+      </p>
+      <div class="card">
+        <Switch
+          label="Look words up online"
+          description="When no offline dictionary knows a word, ask Wiktionary. Only the word is sent."
+          checked={ui.value.onlineDictionary}
+          onchange={(v) => ui.update({ onlineDictionary: v })}
+        />
+      </div>
+    </section>
+
+    <!-- Keyboard -->
+    <section id="keyboard" hidden={!shown.has('keyboard')}>
+      {@render head('keyboard', 'Keyboard')}
       <div class="card"><ShortcutList /></div>
     </section>
 
-    <section id="about">
-      <h2>About</h2>
+    <!-- About -->
+    <section id="about" hidden={!shown.has('about')}>
+      {@render head('about', 'About')}
       <div class="card about">
         <div class="logo" aria-hidden="true"><Icon name="reading" size={26} strokeWidth={2} /></div>
         <div>
@@ -528,21 +677,11 @@
           <div><span>{formatBytes(library.stats.total_bytes)}</span>of books</div>
         </div>
       {/if}
-      <h3>Library data</h3>
-      <div class="card folder">
-        <Icon name="folder" size={17} />
-        <span class="path" title={dataDir}>{dataDir || '…'}</span>
-        <button class="ghost" onclick={copyDataDir}><Icon name={copied ? 'check' : 'copy'} size={15} /> {copied ? 'Copied' : 'Copy'}</button>
+      <div class="card">
+        <SettingRow label="Library data" description={dataDir || '…'}>
+          <button class="ghost" onclick={copyDataDir}><Icon name={copied ? 'check' : 'copy'} size={15} /> {copied ? 'Copied' : 'Copy path'}</button>
+        </SettingRow>
       </div>
-      <h3>Keyboard shortcuts</h3>
-      <dl class="keys">
-        <dt><kbd>Ctrl</kbd> <kbd>F</kbd></dt><dd>Search the library (or the open book)</dd>
-        <dt><kbd>Ctrl</kbd> <kbd>B</kbd></dt><dd>Show or hide the sidebar</dd>
-        <dt><kbd>Esc</kbd></dt><dd>Close search, panels or the reader; go back</dd>
-        <dt><kbd>Alt</kbd> <kbd>←</kbd></dt><dd>Back</dd>
-        <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>Space</kbd></dt><dd>Turn pages while reading</dd>
-        <dt><kbd>Shift</kbd> <kbd>Enter</kbd></dt><dd>Open the focused book</dd>
-      </dl>
     </section>
   </div>
 </div>
@@ -550,7 +689,7 @@
 <style>
   .settings {
     display: grid;
-    grid-template-columns: 210px 1fr;
+    grid-template-columns: 236px 1fr;
     height: 100%;
   }
 
@@ -559,6 +698,7 @@
     flex-direction: column;
     gap: 2px;
     padding: 22px 12px 22px 28px;
+    overflow-y: auto;
   }
 
   .subtitle {
@@ -570,17 +710,73 @@
   }
 
   h1 {
-    margin: 0 0 18px;
+    margin: 0 0 14px;
     font-family: var(--serif);
     font-size: 26px;
     font-weight: 600;
+  }
+
+  .find {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .find:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+
+  .find input {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+  }
+
+  .find input::-webkit-search-cancel-button {
+    display: none;
+  }
+
+  .find kbd {
+    padding: 0 6px;
+  }
+
+  .group {
+    margin: 14px 0 4px 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    opacity: 0.8;
+  }
+
+  .no-match {
+    margin: 12px 10px;
+    font-size: 12.5px;
+    color: var(--muted);
   }
 
   .index button {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 10px;
+    padding: 7px 10px;
     border-radius: 8px;
     color: var(--muted);
     text-align: left;
@@ -600,21 +796,36 @@
   }
 
   section {
-    max-width: 760px;
-    padding-bottom: 28px;
+    max-width: 780px;
+    padding-bottom: 36px;
     margin-bottom: 8px;
     scroll-margin-top: 12px;
   }
 
+  section[hidden] {
+    display: none;
+  }
+
+  header {
+    margin-bottom: 10px;
+  }
+
   h2 {
-    margin: 4px 0 6px;
+    margin: 4px 0 2px;
     font-family: var(--serif);
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 600;
   }
 
+  .summary {
+    margin: 0;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+
   h3 {
-    margin: 22px 0 10px;
+    margin: 22px 0 8px;
     font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
@@ -630,11 +841,24 @@
   }
 
   .card {
-    padding: 6px 18px;
+    padding: 4px 20px;
     margin-top: 12px;
     border-radius: 14px;
     border: 1px solid var(--border);
     background: var(--surface);
+  }
+
+  .card > .hint:first-child {
+    margin-top: 14px;
+  }
+
+  /* Every row in a card is divided from the next. */
+  .card > :global(:is(.row, .setting) + :is(.row, .setting)) {
+    border-top: 1px solid var(--border);
+  }
+
+  .card > :global(.row) {
+    padding: 14px 0;
   }
 
   /* Theme cards with a tiny mock-up of the app. */
@@ -669,7 +893,7 @@
 
   .mock {
     display: flex;
-    height: 86px;
+    height: 74px;
     border-radius: 8px;
     overflow: hidden;
     --m-bg: #f6f1e7;
@@ -737,14 +961,14 @@
 
   .accents {
     display: flex;
-    gap: 12px;
+    gap: 10px;
   }
 
   .swatch {
     display: grid;
     place-items: center;
-    width: 34px;
-    height: 34px;
+    width: 28px;
+    height: 28px;
     padding: 0;
     border-radius: 50%;
     border: none;
@@ -762,28 +986,34 @@
   .swatch.active {
     transform: scale(1.12);
     box-shadow:
-      0 0 0 3px var(--bg),
+      0 0 0 3px var(--surface),
       0 0 0 5px var(--c);
   }
 
   .segmented {
     display: inline-flex;
-    gap: 6px;
+    gap: 4px;
+    padding: 3px;
+    border-radius: 11px;
+    background: var(--surface-2);
   }
 
   .segmented button {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 14px;
-    border-radius: 10px;
+    gap: 7px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
   }
 
   .segmented button.active {
-    border-color: var(--accent);
-    background: var(--accent-soft);
+    background: var(--surface);
     color: var(--accent);
     font-weight: 600;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.15);
   }
 
   .size-preview {
@@ -799,11 +1029,6 @@
     padding: 10px 0;
     border-bottom: 1px solid var(--border);
     color: var(--muted);
-  }
-
-  .card.folder {
-    padding: 8px 14px;
-    border-bottom: 1px solid var(--border);
   }
 
   .path {
@@ -824,8 +1049,75 @@
     padding: 12px 0;
   }
 
+  .buttons button,
+  .card :global(.setting button) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  /* Backup: the three things you come here to do. */
+  .actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .action {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    text-align: left;
+    transition:
+      transform 220ms var(--ease),
+      border-color 200ms ease;
+  }
+
+  .action:hover:not(:disabled) {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    background: var(--surface);
+  }
+
+  .action :global(svg) {
+    margin-bottom: 6px;
+    color: var(--accent);
+  }
+
+  .action.primary {
+    border-color: transparent;
+    background: linear-gradient(140deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #5a2d0c));
+    color: var(--accent-text);
+  }
+
+  .action.primary:hover:not(:disabled) {
+    background: linear-gradient(140deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #5a2d0c));
+  }
+
+  .action.primary :global(svg),
+  .action.primary small {
+    color: inherit;
+  }
+
+  .action small {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+
+  .action.primary small {
+    opacity: 0.85;
+  }
+
   .backup-message {
-    margin-top: 0;
+    margin: 12px 0 0;
     color: var(--text);
   }
 
@@ -852,12 +1144,6 @@
   button.small {
     padding: 4px 10px;
     font-size: 12px;
-  }
-
-  .buttons button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
   }
 
   .spacer {
@@ -991,21 +1277,13 @@
     font-size: inherit;
   }
 
+  .see-also {
+    margin-top: 10px;
+  }
+
   .hint.inline {
     margin: 0;
     align-self: center;
-  }
-
-  .keys {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 10px 18px;
-    align-items: center;
-  }
-
-  .keys dd {
-    margin: 0;
-    color: var(--muted);
   }
 
   kbd {
