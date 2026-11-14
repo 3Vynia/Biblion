@@ -291,6 +291,9 @@ pub fn open(path: &std::path::Path) -> Result<Connection> {
     Ok(conn)
 }
 
+/// Every connection: 32 MB of page cache and 128 MB of the file mapped.
+/// With several readers open, more makes the app look heavy (all of it
+/// counts as its memory) without making queries faster.
 pub fn configure(conn: &Connection) -> Result<()> {
     conn.busy_timeout(std::time::Duration::from_secs(10))?;
     conn.execute_batch(
@@ -298,8 +301,8 @@ pub fn configure(conn: &Connection) -> Result<()> {
          PRAGMA synchronous = NORMAL;
          PRAGMA foreign_keys = ON;
          PRAGMA temp_store = MEMORY;
-         PRAGMA cache_size = -65536;
-         PRAGMA mmap_size = 268435456;",
+         PRAGMA cache_size = -32768;
+         PRAGMA mmap_size = 134217728;",
     )?;
     Ok(())
 }

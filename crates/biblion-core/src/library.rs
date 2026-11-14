@@ -17,7 +17,7 @@ use crate::{
     Shelf, TagEntry,
 };
 
-const MAX_IDLE_READERS: usize = 8;
+const MAX_IDLE_READERS: usize = 4;
 
 pub struct Library {
     db_path: PathBuf,
@@ -47,6 +47,8 @@ impl Library {
         std::fs::create_dir_all(data_dir).map_err(|e| Error::io(data_dir, e))?;
         let db_path = data_dir.join("library.db");
         let mut writer = db::open(&db_path)?;
+        // The scanner writes a lot at once: it gets a bigger cache.
+        writer.execute_batch("PRAGMA cache_size = -65536;")?;
         db::migrate(&mut writer)?;
         let user_writer = db::open(&db_path)?;
         Ok(Self {
