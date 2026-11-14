@@ -40,7 +40,6 @@ pub struct AppState {
     /// Tracks of the music folder's last listing (served by `music://`).
     pub music: Mutex<Vec<PathBuf>>,
     pub online: Arc<Sources>,
-    pub tts: Arc<crate::tts::Tts>,
 }
 
 /// Error sent to the UI: a stable `code` to branch on plus a readable message.
@@ -561,92 +560,6 @@ pub async fn md_apply_cover(state: State<'_, AppState>, id: BookId, token: Strin
         Ok(lib.replace_cover(id, &bytes)?)
     })
     .await
-}
-
-// ── Reading aloud ────────────────────────────────────────────────────────
-
-async fn tts_blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> CmdResult<T> {
-    tauri::async_runtime::spawn_blocking(f)
-        .await
-        .map_err(|e| CmdError::new("internal", format!("background task failed: {e}")))?
-        .map_err(|e| CmdError::new("tts", e))
-}
-
-#[tauri::command]
-pub async fn tts_status(state: State<'_, AppState>) -> CmdResult<crate::tts::Status> {
-    let tts = state.tts.clone();
-    tts_blocking(move || Ok(tts.status())).await
-}
-
-#[derive(Clone, Serialize)]
-pub struct DownloadProgress {
-    pub done: u64,
-    pub total: u64,
-}
-
-/// Downloads the voice model (about 350 MB), once, when the user agrees.
-#[tauri::command]
-pub async fn tts_install(state: State<'_, AppState>, on_progress: Channel<DownloadProgress>) -> CmdResult<()> {
-    let tts = state.tts.clone();
-    tts_blocking(move || {
-        let last = Mutex::new(Instant::now() - EVENT_INTERVAL);
-        tts.install(&|done, total| {
-            let mut last = last.lock().unwrap();
-            if last.elapsed() >= EVENT_INTERVAL || done == total {
-                *last = Instant::now();
-                let _ = on_progress.send(DownloadProgress { done, total });
-            }
-        })
-    })
-    .await
-}
-
-/// One sentence of speech: mono float32 samples at 24 kHz, as raw bytes.
-#[tauri::command]
-pub async fn tts_speak(state: State<'_, AppState>, text: String, voice: String, speed: f32) -> CmdResult<tauri::ipc::Response> {
-    if text.chars().count() > 4_000 {
-        return Err(CmdError::new("invalid_argument", "a sentence to read is too long"));
-    }
-    let tts = state.tts.clone();
-    let audio = tts_blocking(move || tts.speak(&text, &voice, speed)).await?;
-    let bytes: Vec<u8> = audio.iter().flat_map(|s| s.to_le_bytes()).collect();
-    Ok(tauri::ipc::Response::new(bytes))
-}
-
-/// The region of the connected Azure key, if any (the key itself stays here).
-#[tauri::command]
-pub fn tts_azure_region(state: State<'_, AppState>) -> Option<String> {
-    state.settings.lock().unwrap().azure_speech.as_ref().map(|k| k.region.clone())
-}
-
-/// Checks the key with Microsoft, then keeps it for the online voices.
-#[tauri::command]
-pub async fn tts_azure_connect(state: State<'_, AppState>, key: String, region: String) -> CmdResult<()> {
-    let azure = crate::azure_tts::AzureKey { key: key.trim().to_owned(), region: region.trim().to_ascii_lowercase() };
-    let checked = azure.clone();
-    tts_blocking(move || crate::azure_tts::check(&checked)).await?;
-    update_settings(&state, |s| {
-        s.azure_speech = Some(azure.clone());
-        Ok(())
-    })?;
-    state.tts.set_azure(Some(azure));
-    Ok(())
-}
-
-#[tauri::command]
-pub fn tts_azure_disconnect(state: State<'_, AppState>) -> CmdResult<()> {
-    update_settings(&state, |s| {
-        s.azure_speech = None;
-        Ok(())
-    })?;
-    state.tts.set_azure(None);
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn tts_remove(state: State<'_, AppState>) -> CmdResult<()> {
-    let tts = state.tts.clone();
-    tts_blocking(move || tts.remove()).await
 }
 
 // ── Music ────────────────────────────────────────────────────────────────

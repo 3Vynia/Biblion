@@ -22,8 +22,6 @@
   import TocPanel, { type TocItem } from './TocPanel.svelte'
   import SearchPanel from './SearchPanel.svelte'
   import SettingsPanel from './SettingsPanel.svelte'
-  import ReadAloudBar from './ReadAloudBar.svelte'
-  import { readAloud, type SpeechSource } from '../lib/readAloud.svelte'
   import { rangeFill } from '../lib/rangeFill'
   import { readingLog, trackReading } from '../lib/readingLog'
   import { handleGlobalKey, plain, typing } from '../lib/shortcuts.svelte'
@@ -307,91 +305,6 @@
     panel = null
   }
 
-  // ── Reading aloud ───────────────────────────────────────────────────────
-  let aloud = $state(false)
-  const TTS_HIGHLIGHT = 'biblion-tts'
-
-  /** Marks the sentence being read, and turns the page to it. */
-  function speakingRange(range: Range) {
-    view.renderer.scrollToAnchor(range, true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const win = range.startContainer.ownerDocument?.defaultView as any
-    if (win?.CSS?.highlights && win.Highlight) win.CSS.highlights.set(TTS_HIGHLIGHT, new win.Highlight(range))
-  }
-
-  function clearSpeakingRange() {
-    for (const { doc } of view?.renderer?.getContents?.() ?? []) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(doc?.defaultView as any)?.CSS?.highlights?.delete(TTS_HIGHLIGHT)
-    }
-  }
-
-  /**
-   * The book as a source of sentences, from the page being shown. Two of
-   * foliate's TTS walkers run over the chapter: one goes ahead to prepare
-   * speech, the other follows the voice, so the marked sentence is always
-   * the one being heard. Marks are named "block:mark" to tell them apart.
-   */
-  function speechSource(): SpeechSource {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let ahead: any = null
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let follower: any = null
-    let aheadBlock = 0
-    let followerBlock = 0
-    const tag = (ssml: string | null | undefined) =>
-      ssml ? ssml.replace(/<mark\b([^>]*?)\bname="/g, `<mark$1name="${aheadBlock}:`) : null
-
-    async function open(from: Range | null) {
-      const [{ TTS }, { textWalker }] = await Promise.all([
-        import('../../vendor/foliate-js/tts.js'),
-        import('../../vendor/foliate-js/text-walker.js'),
-      ])
-      const doc = view.renderer.getContents?.()[0]?.doc
-      if (!doc) return null
-      ahead = new TTS(doc, textWalker, speakingRange, 'sentence')
-      follower = new TTS(doc, textWalker, speakingRange, 'sentence')
-      aheadBlock += 1
-      followerBlock = aheadBlock
-      if (from) follower.from(from)
-      else follower.start()
-      return tag(from ? ahead.from(from) : ahead.start())
-    }
-
-    const section = () => view.renderer.getContents?.()[0]?.index
-    return {
-      async start() {
-        return open(view.lastLocation?.range ?? null)
-      },
-      async next() {
-        const ssml = ahead?.next()
-        if (!ssml) return null
-        aheadBlock += 1
-        return tag(ssml)
-      },
-      async nextChapter() {
-        const before = section()
-        await view.renderer.nextSection?.()
-        if (section() === before) return null
-        return open(null)
-      },
-      mark(name) {
-        if (name === null) return clearSpeakingRange()
-        const [block, mark] = [Number(name.slice(0, name.indexOf(':'))), name.slice(name.indexOf(':') + 1)]
-        while (follower && followerBlock < block) {
-          follower.next()
-          followerBlock += 1
-        }
-        follower?.setMark(mark)
-      },
-    }
-  }
-
-  function toggleAloud() {
-    if (aloud) readAloud.stop()
-    aloud = !aloud
-  }
-
   function togglePanel(p: Exclude<Panel, null>) {
     panel = panel === p ? null : p
     barsVisible = true
@@ -424,7 +337,6 @@
     else if (letter === 'a') togglePanel('settings')
     else if (letter === 'm') togglePanel('ambience')
     else if (letter === 'b') toggleBookmark()
-    else if (letter === 'l') toggleAloud()
     else if (letter === 'h') barsVisible = !barsVisible
     else if (letter === 'g') {
       barsVisible = true
@@ -559,12 +471,6 @@
       const doc: Document | undefined = e.detail?.doc
       const index: number = e.detail?.index
       doc?.addEventListener('keydown', onKey)
-      // How the sentence being read aloud looks.
-      const style = doc?.createElement('style')
-      if (style) {
-        style.textContent = `::highlight(${TTS_HIGHLIGHT}) { background-color: rgb(240 172 50 / 0.42); }`
-        doc?.head?.append(style)
-      }
       doc?.addEventListener('click', onDocClick)
       doc?.addEventListener('pointerup', () => setTimeout(() => checkSelection(doc, index), 10))
     })
@@ -600,7 +506,6 @@
   })
 
   onDestroy(() => {
-    readAloud.stop()
     window.removeEventListener('keydown', onKey)
     flushProgress()
     closeFootnote()
@@ -664,16 +569,6 @@
     >
     <button
       class="icon"
-      class:on={aloud}
-      class:playing={readAloud.status === 'playing'}
-      onclick={toggleAloud}
-      disabled={status !== 'ready'}
-      title="Read aloud (L)"
-      aria-label="Read aloud"
-      aria-pressed={aloud}><Icon name="headphones" size={18} /></button
-    >
-    <button
-      class="icon"
       class:on={panel === 'ambience'}
       class:playing={ambience.playing}
       onclick={() => togglePanel('ambience')}
@@ -721,10 +616,6 @@
           <SettingsPanel />
         {/if}
       </aside>
-    {/if}
-
-    {#if aloud && status === 'ready'}
-      <ReadAloudBar lang={book.metadata.language} source={speechSource} onclose={() => (aloud = false)} />
     {/if}
 
     <div class="footnote" class:visible={footnote.visible} role="dialog" aria-label="Footnote">

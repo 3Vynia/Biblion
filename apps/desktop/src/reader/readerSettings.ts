@@ -29,9 +29,6 @@ export interface ReaderSettings {
   comicSpread: ComicSpread
   /** `rtl` for manga: pages and arrows run right to left. */
   comicDirection: ComicDirection
-  /** Reading aloud: voices chosen per language ("es" → "ef_dora"), and the pace. */
-  voices: Record<string, string>
-  voiceSpeed: number
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -48,11 +45,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   comicFit: 'screen',
   comicSpread: 'auto',
   comicDirection: 'ltr',
-  voices: {},
-  voiceSpeed: 1,
 }
-
-export const VOICE_SPEED = { min: 0.7, max: 1.5, step: 0.05 }
 
 export const FONT_SIZE = { min: 60, max: 250, step: 10 }
 export const LINE_HEIGHT = { min: 1.0, max: 2.4, step: 0.1 }
@@ -111,11 +104,6 @@ export function normalizeSettings(raw: unknown): ReaderSettings {
     comicFit: oneOf(r.comicFit, ['screen', 'width', 'height'] as const, d.comicFit),
     comicSpread: oneOf(r.comicSpread, ['auto', 'single'] as const, d.comicSpread),
     comicDirection: oneOf(r.comicDirection, ['ltr', 'rtl'] as const, d.comicDirection),
-    voices:
-      r.voices && typeof r.voices === 'object'
-        ? Object.fromEntries(Object.entries(r.voices as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === 'string'))
-        : {},
-    voiceSpeed: Math.round(clamp(num(r.voiceSpeed, d.voiceSpeed), VOICE_SPEED.min, VOICE_SPEED.max) * 100) / 100,
   }
 }
 

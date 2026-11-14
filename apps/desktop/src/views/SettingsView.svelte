@@ -202,7 +202,6 @@
     api.dataDir().then((d) => (dataDir = d)).catch(() => {})
     api.listDictionaries().then((d) => (dictionaries = d)).catch(() => {})
     onlineMetadata.load()
-    api.ttsAzureRegion().then((r) => (azureRegion = r)).catch(() => {})
   })
 
   // Highlight the section being read in the side index: the last one whose
@@ -295,58 +294,11 @@
   const readerTheme = $derived(THEMES[r.theme])
   const onOff = (on: boolean) => (on ? 'on' : 'off')
 
-  function privacySummary(words: boolean, books: boolean, voices: boolean) {
-    const base =
-      words && books
-        ? 'Single words go to Wiktionary, book searches to Open Library and AniList'
-        : words
-          ? 'Only single words go online, to Wiktionary'
-          : books
-            ? 'Only the book searches you make go online, to Open Library and AniList'
-            : null
-    if (!voices) return base ?? 'Nothing leaves this computer'
-    return base ? `${base}; text read by an online voice to Microsoft` : 'Only text read by an online voice goes online, to Microsoft'
-  }
-
-  // ── Online voices (Microsoft Azure, with the user's own key) ──
-  let azureRegion = $state<string | null>(null)
-  let azureOpen = $state(false)
-  let azureKey = $state('')
-  let azureRegionInput = $state('')
-  let azureBusy = $state(false)
-  let azureError = $state<string | null>(null)
-
-  async function connectAzure(e: Event) {
-    e.preventDefault()
-    if (!azureKey.trim() || !azureRegionInput.trim()) return
-    azureBusy = true
-    azureError = null
-    try {
-      await api.ttsAzureConnect(azureKey, azureRegionInput)
-      azureRegion = azureRegionInput.trim().toLowerCase()
-      azureKey = ''
-      azureOpen = false
-    } catch (err) {
-      azureError = errorMessage(err)
-    } finally {
-      azureBusy = false
-    }
-  }
-
-  async function disconnectAzure() {
-    const ok = await confirm({
-      title: 'Disconnect the online voices?',
-      message: 'Biblion forgets your Azure key, and Álvaro and Jorge leave the list of voices. You can connect again any time.',
-      confirmLabel: 'Disconnect',
-      danger: true,
-    })
-    if (!ok) return
-    try {
-      await api.ttsAzureDisconnect()
-      azureRegion = null
-    } catch (err) {
-      azureError = errorMessage(err)
-    }
+  function privacySummary(words: boolean, books: boolean) {
+    if (words && books) return 'Single words go to Wiktionary, book searches to Open Library and AniList'
+    if (words) return 'Only single words go online, to Wiktionary'
+    if (books) return 'Only the book searches you make go online, to Open Library and AniList'
+    return 'Nothing leaves this computer'
   }
 
   // One line under each heading: what this section is set to right now.
@@ -369,7 +321,7 @@
     backup: autoBackup
       ? `Automatic backups on${autoBackups[0] ? ` · last ${formatDate(autoBackups[0].created_at)}` : ''}`
       : 'Automatic backups off',
-    privacy: privacySummary(ui.value.onlineDictionary, onlineMetadata.enabled, !!azureRegion),
+    privacy: privacySummary(ui.value.onlineDictionary, onlineMetadata.enabled),
     keyboard: 'Press ? anywhere to see them',
     about: 'Biblion 0.1.0',
   })
@@ -713,42 +665,6 @@
           checked={onlineMetadata.enabled}
           onchange={(v) => onlineMetadata.set(v).catch(() => {})}
         />
-        <SettingRow
-          label="Online voices"
-          description="Álvaro (a narrator’s voice) and Jorge, from Microsoft Azure, with your own free key. Each sentence read with them is sent to Microsoft; the voices on this computer send nothing."
-        >
-          {#if azureRegion}
-            <span class="connected"><Icon name="check" size={14} strokeWidth={2.6} /> Connected · {azureRegion}</span>
-            <button class="ghost" onclick={disconnectAzure}>Disconnect</button>
-          {:else}
-            <button onclick={() => (azureOpen = !azureOpen)} aria-expanded={azureOpen}>Connect…</button>
-          {/if}
-        </SettingRow>
-        {#if azureOpen && !azureRegion}
-          <form class="azure" onsubmit={connectAzure} in:rise={{ y: 4, duration: 200 }}>
-            <ol class="hint">
-              <li>
-                Sign in at <button type="button" class="text-link" onclick={() => openUrl('https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices')}>portal.azure.com</button>
-                and create a <em>Speech</em> resource with the free <em>F0</em> plan (about 500,000 characters a month).
-              </li>
-              <li>Open the resource’s <em>Keys and Endpoint</em> page and copy <em>Key 1</em> and the <em>Location/Region</em>.</li>
-            </ol>
-            <div class="azure-fields">
-              <label>
-                <span>Key</span>
-                <input type="password" bind:value={azureKey} autocomplete="off" spellcheck="false" />
-              </label>
-              <label>
-                <span>Region</span>
-                <input bind:value={azureRegionInput} placeholder="westeurope" spellcheck="false" />
-              </label>
-              <button class="primary" type="submit" disabled={azureBusy || !azureKey.trim() || !azureRegionInput.trim()}
-                >{azureBusy ? 'Checking…' : 'Connect'}</button
-              >
-            </div>
-          </form>
-        {/if}
-        {#if azureError}<p class="error">{azureError}</p>{/if}
       </div>
     </section>
 
@@ -1377,45 +1293,6 @@
     color: var(--accent);
     text-decoration: underline;
     font-size: inherit;
-  }
-
-  .connected {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 12.5px;
-    color: var(--accent);
-  }
-
-  .azure {
-    padding: 4px 0 16px;
-  }
-
-  .azure ol {
-    margin: 0 0 12px;
-    padding-left: 18px;
-  }
-
-  .azure-fields {
-    display: grid;
-    grid-template-columns: 2fr 1fr auto;
-    gap: 10px;
-    align-items: end;
-  }
-
-  .azure-fields label {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    font-size: 11.5px;
-    color: var(--muted);
-  }
-
-  .azure-fields input {
-    padding: 8px 11px;
-    border-radius: 9px;
-    font-size: 13.5px;
-    color: var(--text);
   }
 
   .see-also {

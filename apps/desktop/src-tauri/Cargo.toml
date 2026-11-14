@@ -20,10 +20,6 @@ tauri-plugin-opener = "2"
 notify = "8"
 trash = "5"
 ureq = "3"
-# Reading aloud: Kokoro on ONNX Runtime (linked in), espeak-ng loaded at run time.
-ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "download-binaries", "tls-rustls", "api-31"] }
-libloading = "0.9"
-zip.workspace = true
 walkdir.workspace = true
 serde.workspace = true
 serde_json.workspace = true

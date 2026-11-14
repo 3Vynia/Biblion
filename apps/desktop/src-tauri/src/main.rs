@@ -5,12 +5,10 @@ mod backup;
 mod commands;
 mod music;
 mod anilist;
-mod azure_tts;
 mod online;
 mod openlibrary;
 mod protocols;
 mod settings;
-mod tts;
 mod watcher;
 
 use std::sync::{Arc, Mutex};
@@ -85,19 +83,7 @@ fn main() {
                     Err(e) => tracing::warn!("automatic backup failed: {e}"),
                 });
             }
-            // Installers ship espeak-ng next to the app; in development the system one is used.
-            let bundled_espeak = app.path().resource_dir().ok().map(|d| d.join("espeak")).filter(|d| d.is_dir());
-            let tts = Arc::new(tts::Tts::new(&data_dir, bundled_espeak));
-            tts.set_azure(settings.azure_speech.clone());
-            app.manage(AppState {
-                lib,
-                settings: Mutex::new(settings),
-                settings_path,
-                watcher,
-                music: Mutex::new(Vec::new()),
-                online: Arc::new(online::Sources::default()),
-                tts,
-            });
+            app.manage(AppState { lib, settings: Mutex::new(settings), settings_path, watcher, music: Mutex::new(Vec::new()), online: Arc::new(online::Sources::default()) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -166,13 +152,6 @@ fn main() {
             commands::list_annotations,
             commands::annotation_counts,
             commands::update_metadata,
-            commands::tts_status,
-            commands::tts_install,
-            commands::tts_speak,
-            commands::tts_remove,
-            commands::tts_azure_region,
-            commands::tts_azure_connect,
-            commands::tts_azure_disconnect,
             commands::read_image,
             commands::cover_from_file,
             commands::get_online_metadata,

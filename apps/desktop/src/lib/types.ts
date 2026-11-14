@@ -344,26 +344,3 @@ export interface SourceResults {
   candidates: MdCandidate[]
   error: string | null
 }
-
-/** Reading aloud (Kokoro). */
-export interface TtsVoice {
-  id: string
-  name: string
-  /** espeak language: "es", "en-us", "en-gb". */
-  lang: string
-  /** Read by an online service (Microsoft Azure): the text is sent to it. */
-  online: boolean
-}
-
-export interface TtsStatus {
-  installed: boolean
-  espeak: boolean
-  download_bytes: number
-  sample_rate: number
-  voices: TtsVoice[]
-}
-
-export interface DownloadProgress {
-  done: number
-  total: number
-}
