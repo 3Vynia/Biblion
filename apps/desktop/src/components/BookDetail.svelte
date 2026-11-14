@@ -152,7 +152,7 @@
     }
   }
 
-  // ── Open Library ──
+  // ── Online sources ──
   let lookup = $state(false)
   let editing = $state(false)
   let updated = $state<string | null>(null)
@@ -164,7 +164,7 @@
       const ok = await confirm({
         title: 'Look this book up online?',
         message:
-          'Biblion will send its title, author and ISBN to Open Library (openlibrary.org), and nothing else. You can turn this off any time in Settings, under Privacy & online.',
+          'Biblion will send its title, author and ISBN to Open Library (openlibrary.org) and AniList (anilist.co), and nothing else. You can turn this off any time in Settings, under Privacy & online.',
         confirmLabel: 'Turn on and search',
       })
       if (!ok) return

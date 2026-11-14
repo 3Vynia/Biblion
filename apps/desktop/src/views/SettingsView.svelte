@@ -58,7 +58,7 @@
       title: 'Your data',
       sections: [
         { id: 'backup', label: 'Backup', icon: 'save', keywords: 'restore export notes markdown automatic copy highlights progress' },
-        { id: 'privacy', label: 'Privacy & online', icon: 'globe', keywords: 'internet network wiktionary online offline open library metadata covers details' },
+        { id: 'privacy', label: 'Privacy & online', icon: 'globe', keywords: 'internet network wiktionary online offline open library anilist manga manhwa metadata covers details' },
       ],
     },
     {
@@ -295,9 +295,9 @@
   const onOff = (on: boolean) => (on ? 'on' : 'off')
 
   function privacySummary(words: boolean, books: boolean) {
-    if (words && books) return 'Single words go to Wiktionary, book searches to Open Library'
+    if (words && books) return 'Single words go to Wiktionary, book searches to Open Library and AniList'
     if (words) return 'Only single words go online, to Wiktionary'
-    if (books) return 'Only the book searches you make go online, to Open Library'
+    if (books) return 'Only the book searches you make go online, to Open Library and AniList'
     return 'Nothing leaves this computer'
   }
 
@@ -661,7 +661,7 @@
         />
         <Switch
           label="Find book details online"
-          description="From a book’s details, search Open Library for its cover, description and subjects. Only the title, author and ISBN you search for are sent, and nothing changes until you choose it."
+          description="From a book’s details, search Open Library (books) and AniList (manga, manhwa, light novels) at once for its cover, description and subjects. Only the title, author and ISBN you search for are sent, and nothing changes until you choose it."
           checked={onlineMetadata.enabled}
           onchange={(v) => onlineMetadata.set(v).catch(() => {})}
         />
