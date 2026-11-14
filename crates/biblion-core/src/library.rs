@@ -119,6 +119,13 @@ impl Library {
         self.read(|c| db::list_books(c, q))
     }
 
+    /// The book at a path, if the library has it.
+    pub fn book_at(&self, path: &Path) -> Result<Option<BookId>> {
+        use rusqlite::OptionalExtension;
+        let path = path.to_string_lossy();
+        self.read(|c| Ok(c.query_row("SELECT id FROM books WHERE path = ?1", [path.as_ref()], |r| r.get(0)).optional()?))
+    }
+
     pub fn get_book(&self, id: BookId) -> Result<Book> {
         self.read(|c| db::get_book(c, id))
     }
