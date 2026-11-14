@@ -77,11 +77,15 @@ folder watching, a library health screen (duplicates, unreadable and
 missing files), reading statistics (time, streaks, yearly goal), backups
 (manual and daily automatic, restorable on another computer), keyboard
 shortcuts for everything (press `?`) and, if you turn it on, covers,
-descriptions and subjects from Open Library, picked field by field.
+descriptions and subjects found online, picked field by field: Open Library
+for books and AniList for manga, manhwa and light novels, searched at once.
+Comics are named from their files ("Crossed - Badlands 012.cbr" is issue 12
+of Crossed - Badlands) and authors can come from the folder ("Badlands (Garth
+Ennis y Jacen Burrows)"). Any book's details can also be edited by hand.
 
 Biblion works offline. Only two things can reach the internet, both off
 unless you allow them in Settings, under Privacy & online: looking up a word on
-Wiktionary, and searching Open Library for a book you choose.
+Wiktionary, and searching Open Library and AniList for a book you choose.
 
 ## License
 
