@@ -613,6 +613,36 @@ pub async fn tts_speak(state: State<'_, AppState>, text: String, voice: String, 
     Ok(tauri::ipc::Response::new(bytes))
 }
 
+/// The region of the connected Azure key, if any (the key itself stays here).
+#[tauri::command]
+pub fn tts_azure_region(state: State<'_, AppState>) -> Option<String> {
+    state.settings.lock().unwrap().azure_speech.as_ref().map(|k| k.region.clone())
+}
+
+/// Checks the key with Microsoft, then keeps it for the online voices.
+#[tauri::command]
+pub async fn tts_azure_connect(state: State<'_, AppState>, key: String, region: String) -> CmdResult<()> {
+    let azure = crate::azure_tts::AzureKey { key: key.trim().to_owned(), region: region.trim().to_ascii_lowercase() };
+    let checked = azure.clone();
+    tts_blocking(move || crate::azure_tts::check(&checked)).await?;
+    update_settings(&state, |s| {
+        s.azure_speech = Some(azure.clone());
+        Ok(())
+    })?;
+    state.tts.set_azure(Some(azure));
+    Ok(())
+}
+
+#[tauri::command]
+pub fn tts_azure_disconnect(state: State<'_, AppState>) -> CmdResult<()> {
+    update_settings(&state, |s| {
+        s.azure_speech = None;
+        Ok(())
+    })?;
+    state.tts.set_azure(None);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn tts_remove(state: State<'_, AppState>) -> CmdResult<()> {
     let tts = state.tts.clone();

@@ -5,6 +5,7 @@ mod backup;
 mod commands;
 mod music;
 mod anilist;
+mod azure_tts;
 mod online;
 mod openlibrary;
 mod protocols;
@@ -87,6 +88,7 @@ fn main() {
             // Installers ship espeak-ng next to the app; in development the system one is used.
             let bundled_espeak = app.path().resource_dir().ok().map(|d| d.join("espeak")).filter(|d| d.is_dir());
             let tts = Arc::new(tts::Tts::new(&data_dir, bundled_espeak));
+            tts.set_azure(settings.azure_speech.clone());
             app.manage(AppState {
                 lib,
                 settings: Mutex::new(settings),
@@ -168,6 +170,9 @@ fn main() {
             commands::tts_install,
             commands::tts_speak,
             commands::tts_remove,
+            commands::tts_azure_region,
+            commands::tts_azure_connect,
+            commands::tts_azure_disconnect,
             commands::read_image,
             commands::cover_from_file,
             commands::get_online_metadata,

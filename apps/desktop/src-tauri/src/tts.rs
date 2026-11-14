@@ -43,6 +43,8 @@ pub struct VoiceInfo {
     pub id: String,
     pub name: String,
     pub lang: String,
+    /// Read by an online service (the text is sent to it).
+    pub online: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -57,7 +59,7 @@ pub struct Status {
 }
 
 pub fn voices() -> Vec<VoiceInfo> {
-    VOICES.iter().map(|(id, name, lang)| VoiceInfo { id: (*id).into(), name: (*name).into(), lang: (*lang).into() }).collect()
+    VOICES.iter().map(|(id, name, lang)| VoiceInfo { id: (*id).into(), name: (*name).into(), lang: (*lang).into(), online: false }).collect()
 }
 
 // ── espeak-ng ────────────────────────────────────────────────────────────
@@ -292,11 +294,17 @@ pub struct Tts {
     bundled_espeak: Option<PathBuf>,
     espeak: Mutex<Option<Espeak>>,
     engine: Mutex<Option<Engine>>,
+    /// The user's Azure key, when they connected one.
+    azure: Mutex<Option<crate::azure_tts::AzureKey>>,
 }
 
 impl Tts {
     pub fn new(data_dir: &Path, bundled_espeak: Option<PathBuf>) -> Self {
-        Self { dir: data_dir.join("tts"), bundled_espeak, espeak: Mutex::new(None), engine: Mutex::new(None) }
+        Self { dir: data_dir.join("tts"), bundled_espeak, espeak: Mutex::new(None), engine: Mutex::new(None), azure: Mutex::new(None) }
+    }
+
+    pub fn set_azure(&self, key: Option<crate::azure_tts::AzureKey>) {
+        *self.azure.lock().unwrap() = key;
     }
 
     pub fn installed(&self) -> bool {
@@ -318,12 +326,22 @@ impl Tts {
             espeak: self.with_espeak(|_| Ok(())).is_ok(),
             download_bytes: MODEL_BYTES + VOICES_BYTES,
             sample_rate: SAMPLE_RATE,
-            voices: voices(),
+            voices: {
+                let mut all = voices();
+                if self.azure.lock().unwrap().is_some() {
+                    all.extend(crate::azure_tts::VOICES.iter().map(|v| VoiceInfo { id: v.id.into(), name: v.name.into(), lang: v.lang.into(), online: true }));
+                }
+                all
+            },
         }
     }
 
     /// Audio for one sentence: mono float32 samples at 24 kHz.
     pub fn speak(&self, text: &str, voice: &str, speed: f32) -> Result<Vec<f32>, String> {
+        if let Some(online) = crate::azure_tts::voice(voice) {
+            let key = self.azure.lock().unwrap().clone().ok_or("Online voices are not connected: add your Azure key in Settings")?;
+            return crate::azure_tts::speak(&key, online, text, speed);
+        }
         let lang = VOICES.iter().find(|v| v.0 == voice).map(|v| v.2).ok_or_else(|| format!("unknown voice {voice}"))?;
         if !self.installed() {
             return Err("The voice is not downloaded yet".into());
@@ -475,7 +493,8 @@ mod live {
     #[ignore]
     fn speak_to_wav() {
         let dir = PathBuf::from(std::env::var("BIBLION_TTS_DIR").unwrap());
-        let tts = Tts { dir: dir.clone(), bundled_espeak: None, espeak: Mutex::new(None), engine: Mutex::new(None) };
+        let tts = Tts::new(dir.parent().unwrap(), None);
+        let tts = Tts { dir: dir.clone(), ..tts };
         let text = "Era una tarde tranquila, y la biblioteca olía a papel y a lluvia. Entre los estantes, alguien pasó una página.";
         let t = std::time::Instant::now();
         let audio = tts.speak(text, "ef_dora+af_bella", 0.95).unwrap();
