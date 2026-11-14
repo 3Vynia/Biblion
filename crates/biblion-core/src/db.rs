@@ -455,6 +455,12 @@ pub fn gc_orphans(conn: &Connection) -> Result<()> {
 /// Manual metadata edit: sets `user_edited` so a rescan never overwrites it.
 pub fn update_metadata(conn: &mut Connection, id: BookId, m: &Metadata) -> Result<()> {
     let tx = conn.transaction()?;
+    write_metadata(&tx, id, m)?;
+    tx.commit()?;
+    Ok(())
+}
+
+pub(crate) fn write_metadata(tx: &Transaction, id: BookId, m: &Metadata) -> Result<()> {
     let title = m.title.clone().unwrap_or_else(|| "Untitled".into());
     let n = tx.execute(
         "UPDATE books SET title=?2, sort_title=?3, authors=?4, author_sort=?5, tags=?6, series=?7, series_index=?8,
@@ -471,8 +477,7 @@ pub fn update_metadata(conn: &mut Connection, id: BookId, m: &Metadata) -> Resul
     if n == 0 {
         return Err(crate::Error::NotFound(format!("book {id}")));
     }
-    set_relations(&tx, id, m, false)?;
-    tx.commit()?;
+    set_relations(tx, id, m, false)?;
     Ok(())
 }
 

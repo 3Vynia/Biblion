@@ -275,6 +275,8 @@ export interface RestoreReport {
   shelf_books: number
   marks: number
   reading_days: number
+  /** Books whose edited details (and chosen covers) come back. */
+  edits?: number
   missing_samples: string[]
 }
 

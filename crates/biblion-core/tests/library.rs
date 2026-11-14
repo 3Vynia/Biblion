@@ -705,6 +705,12 @@ fn a_backup_restores_into_another_library() {
     old.add_to_shelf(shelf, ids[1]).unwrap();
     old.set_favorite(ids[1], true).unwrap();
     old.log_reading(ids[0], "2026-11-10", 600, 30).unwrap();
+    // Details edited by hand, and a cover picked online.
+    let mut emma = old.get_book(ids[1]).unwrap().metadata;
+    emma.series = Some("Austen Collection".into());
+    emma.series_index = Some(4.0);
+    old.update_metadata(ids[1], emma).unwrap();
+    let cover = old.replace_cover(ids[0], &cover_jpeg(90)).unwrap();
     let json = serde_json::to_string(&old.export_backup().unwrap()).unwrap();
 
     // Another computer: the same files, somewhere else.
@@ -719,6 +725,7 @@ fn a_backup_restores_into_another_library() {
     let preview = new.restore_backup(&backup, true).unwrap();
     assert_eq!((preview.books, preview.matched), (2, 2));
     assert_eq!((preview.progress, preview.annotations, preview.shelves_created, preview.shelf_books, preview.marks, preview.reading_days), (1, 1, 1, 1, 1, 1));
+    assert_eq!(preview.edits, 2);
     // A preview changes nothing.
     assert!(new.export_backup().unwrap().books.is_empty());
 
@@ -729,10 +736,23 @@ fn a_backup_restores_into_another_library() {
     assert!(new.get_book(ids[1]).unwrap().favorite);
     assert!(new.list_shelves().unwrap().iter().any(|s| s.name == "Classics" && s.book_count == 1));
     assert_eq!(new.reading_stats("2026-01-01", "2026-12-31", 0, i64::MAX).unwrap().days[0].seconds, 600);
+    let emma = new.get_book(ids[1]).unwrap();
+    assert_eq!((emma.metadata.series.as_deref(), emma.metadata.series_index), (Some("Austen Collection"), Some(4.0)));
+    let dune = new.get_book(ids[0]).unwrap();
+    // The picked cover comes back (from its thumbnail, so under a key of its own).
+    let restored = dune.cover_key.unwrap();
+    assert!(restored.starts_with(&format!("{}-", dune.fingerprint)) && restored != cover, "{restored}");
+    assert!(new.thumbnail_path(&restored).is_file());
 
     // Restoring again adds nothing.
     let again = new.restore_backup(&backup, false).unwrap();
     assert_eq!(again, RestoreReport { books: 2, matched: 2, ..Default::default() });
+
+    // Backups made before edits were kept still open.
+    let mut old_style: serde_json::Value = serde_json::from_str(&json).unwrap();
+    old_style.as_object_mut().unwrap().remove("edits");
+    let backup: LibraryBackup = serde_json::from_value(old_style).unwrap();
+    assert!(backup.edits.is_empty());
 }
 
 #[test]
