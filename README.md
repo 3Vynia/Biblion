@@ -1,92 +1,157 @@
-# Biblion
+<p align="center">
+  <img src="apps/desktop/src-tauri/icons/128x128@2x.png" width="112" alt="Biblion">
+</p>
 
-A local digital library manager written in Rust, built for collections of
-**200,000+ books**: EPUB, PDF, MOBI, AZW3 and CBZ/CBR comics.
+<h1 align="center">Biblion</h1>
 
-This repository contains the **core** (`biblion-core`) and a **command-line
-tool** (`biblion`). The desktop app (Tauri + web UI) builds on
-`biblion_core::Library`; see [ARCHITECTURE.md](ARCHITECTURE.md).
+<p align="center">
+  <b>Your library, on your computer.</b><br>
+  A fast, private reader and library manager for very large collections:<br>
+  EPUB, MOBI, AZW3, PDF and CBZ/CBR comics, from a hundred books to two hundred thousand.
+</p>
 
-## Measured performance (200,000 synthetic books, 9.7 GB, 4 cores)
+<p align="center">
+  <a href="https://github.com/3Vynia/Biblion/releases">Download</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="#build-from-source">Build from source</a>
+</p>
+
+![Home: continue reading, the books in progress and the latest additions](docs/screenshots/home.png)
+
+## Features
+
+### A library that stays fast
+
+Point Biblion at your folders and it reads every book once: titles, authors,
+series, covers. After that, opening it takes a moment, rescans skip what has
+not changed, and folders are watched, so new downloads show up on their own.
+Browse by author, series, subject, format or collection, filter by what you
+are reading or have finished, and search everything at once.
+
+![The cover grid with a book's details](docs/screenshots/library.png)
+
+### Comfortable reading
+
+- **EPUB, MOBI and AZW3** with day, sepia, night and console themes, your
+  choice of font, size, spacing and margins, and one or two pages.
+- **Highlights, notes and bookmarks**, all gathered in a Notes screen and
+  exportable to Markdown.
+- **A dictionary**: offline StarDict dictionaries, and Wiktionary if you allow it.
+- **PDF** with zoom, contents, search and a night mode.
+- **Comics and manga**: single pages, spreads, right-to-left, or a long strip.
+
+![Reading Frankenstein in the sepia theme](docs/screenshots/reader.png)
+
+### Book details, when you ask
+
+Comics are named from their files ("Crossed - Badlands 012.cbr" is issue 12
+of *Crossed - Badlands*), and any book's details can be edited by hand. If you
+turn it on, Biblion also searches **Open Library** (books) and **AniList**
+(manga, manhwa and light novels) at once, and lets you choose, field by field,
+what to take: cover, description, subjects, dates.
+
+![Searching Open Library and AniList for Dune](docs/screenshots/online-details.png)
+
+### A reading ambience
+
+A soundscape made live while you read: it never repeats, follows the time of
+day and answers your page turns. Mix in rain, a fireplace or the sea, save your
+own scenes, add your own music folder, and let it fade out with a sleep timer.
+
+![The ambience settings with the Rainy library scene playing](docs/screenshots/ambience.png)
+
+### Reading statistics
+
+Time read per day and month, streaks, the books you finished and a yearly goal.
+
+![Reading statistics for the year](docs/screenshots/stats.png)
+
+### And also
+
+- **Library health**: duplicate files, books that could not be read, and
+  missing files, with a safe way to tidy them up.
+- **Backups**: one file with your progress, highlights, notes, collections,
+  reading time and edited details, made daily on its own and restorable on
+  another computer, even if your books moved.
+- **Keyboard shortcuts** for everything: press <kbd>?</kbd> to see them.
+- **Light and dark themes**, with a choice of accent colours.
+
+## Privacy
+
+Biblion works offline. It has no account and sends no usage data. Only two
+things can reach the internet, and both stay off until you turn them on in
+*Settings → Privacy & online*:
+
+- looking up a word on Wiktionary (only that word is sent), and
+- searching Open Library and AniList for a book you choose (only the title,
+  author and ISBN you search for are sent).
+
+## Download
+
+Installers for **Windows** (`.exe`) and **Linux** (`.AppImage`, `.deb`, `.rpm`)
+are on the [releases page](https://github.com/3Vynia/Biblion/releases).
+
+> The Windows installer is not signed yet, so Windows may show a SmartScreen
+> warning the first time: choose *More info → Run anyway*.
+
+On Linux, the ambience sounds use GStreamer (`gst-plugins-base` and
+`gst-plugins-good`, installed with the `.deb` and `.rpm` packages).
+
+## Performance
+
+Measured on 200,000 books (9.7 GB) with 4 CPU cores:
 
 | Operation | Time |
 |---|---|
-| First full scan (metadata + 146k thumbnails) | 2 min 55 s (~1,150 books/s) |
+| First full scan (metadata and 146,000 covers) | 2 min 55 s (about 1,150 books/s) |
 | Rescan with no changes | 1.5 s |
-| Page of 100 books, any sort order | 3–5 ms |
-| Page at offset 100,000 | 8 ms |
-| Full-text search (relevance) | 4–17 ms |
-| Peak RAM while scanning | 220 MB |
-| Database / thumbnail cache | 191 MB / 3.3 GB |
+| A page of 100 books, any sort order | 3–5 ms |
+| A page at offset 100,000 | 8 ms |
+| Full-text search, by relevance | 4–17 ms |
+| Peak memory while scanning | 220 MB |
 
-## Quick start
+## Build from source
 
-```bash
-cargo build --release
-B=./target/release/biblion
-
-$B --data ~/biblion-data scan /path/to/my/books   # incremental; rescanning is cheap
-$B --data ~/biblion-data search "garcia marquez"  # accent-insensitive, prefix match
-$B --data ~/biblion-data list --sort author --limit 50
-$B --data ~/biblion-data show 123                 # full record as JSON
-$B --data ~/biblion-data stats
-
-# Load testing
-$B gen-test /tmp/books --count 200000
-$B --data /tmp/db scan /tmp/books && $B --data /tmp/db bench
-```
-
-## Desktop app
-
-Requirements: Rust, Node.js, pnpm and the
-[Tauri v2 system dependencies](https://v2.tauri.app/start/prerequisites/)
-(`webkit2gtk-4.1`, `librsvg`… on Linux).
+You need Rust, Node.js with pnpm, and the
+[Tauri v2 system dependencies](https://v2.tauri.app/start/prerequisites/).
 
 ```bash
 cd apps/desktop
 pnpm install
-pnpm tauri dev      # development
-pnpm tauri build    # installable bundles
-pnpm test           # UI unit tests
-pnpm e2e            # UI end-to-end tests (mock backend, see dev/)
+pnpm tauri dev      # run in development
+pnpm tauri build    # make the installers for this system
+pnpm test           # unit tests
+pnpm e2e            # end-to-end tests, against a mock backend (see dev/)
+cargo test          # the Rust core and app
 ```
 
-Set `BIBLION_DATA_DIR=/some/folder` to use a separate library while testing.
+Set `BIBLION_DATA_DIR=/some/folder` to try Biblion with a separate library.
+The screenshots above come from `SCREENSHOTS=1 pnpm exec playwright test e2e/screenshots.spec.ts`.
 
-On Linux the ambience sounds need the GStreamer plugins (on Arch:
-`gst-plugins-base` and `gst-plugins-good`).
+### Command line
 
-## Tests
+The core also comes with a small command-line tool:
 
 ```bash
-cargo test
-cargo run --release -p biblion-core --example thumb_bench
+cargo build --release
+B=./target/release/biblion
+$B --data ~/biblion-data scan /path/to/books     # incremental
+$B --data ~/biblion-data search "garcia marquez" # accent-insensitive
+$B --data ~/biblion-data list --sort author --limit 50
+$B --data ~/biblion-data apply-metadata details.json
 ```
 
-## Status
+## How it is built
 
-Work in progress. The core and the CLI work. The desktop app has a home
-screen with "continue reading", a virtualised cover grid with filters,
-authors, series, subjects and collections, full book details, an
-EPUB/MOBI/AZW3 reader with themes, highlights, notes, bookmarks and a
-dictionary, a PDF reader (zoom, contents, search, night mode), a comic reader
-(spreads, manga, strip), a Notes screen for the whole library, a
-generative reading ambience (soundscapes, rain, fire, sea, your own music,
-sleep timer),
-folder watching, a library health screen (duplicates, unreadable and
-missing files), reading statistics (time, streaks, yearly goal), backups
-(manual and daily automatic, restorable on another computer), keyboard
-shortcuts for everything (press `?`) and, if you turn it on, covers,
-descriptions and subjects found online, picked field by field: Open Library
-for books and AniList for manga, manhwa and light novels, searched at once.
-Comics are named from their files ("Crossed - Badlands 012.cbr" is issue 12
-of Crossed - Badlands) and authors can come from the folder ("Badlands (Garth
-Ennis y Jacen Burrows)"). Any book's details can also be edited by hand.
-
-Biblion works offline. Only two things can reach the internet, both off
-unless you allow them in Settings, under Privacy & online: looking up a word on
-Wiktionary, and searching Open Library and AniList for a book you choose.
+A Rust core (`crates/biblion-core`) with SQLite and full-text search does the
+heavy work: scanning, metadata, covers, search and statistics. The desktop app
+(`apps/desktop`) is [Tauri 2](https://tauri.app) with a
+[Svelte 5](https://svelte.dev) interface, and reads books with
+[foliate-js](https://github.com/johnfactotum/foliate-js) and
+[pdf.js](https://mozilla.github.io/pdf.js/). See
+[ARCHITECTURE.md](ARCHITECTURE.md) for the details.
 
 ## License
 
-No license yet: © Crystal, all rights reserved.
+No license yet: © 2026 Crystal, all rights reserved.
