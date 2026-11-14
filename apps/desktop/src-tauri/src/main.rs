@@ -4,6 +4,7 @@
 mod backup;
 mod commands;
 mod music;
+mod openlibrary;
 mod protocols;
 mod settings;
 mod watcher;
@@ -80,7 +81,7 @@ fn main() {
                     Err(e) => tracing::warn!("automatic backup failed: {e}"),
                 });
             }
-            app.manage(AppState { lib, settings: Mutex::new(settings), settings_path, watcher, music: Mutex::new(Vec::new()) });
+            app.manage(AppState { lib, settings: Mutex::new(settings), settings_path, watcher, music: Mutex::new(Vec::new()), openlibrary: Arc::new(openlibrary::Client::new()) });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -148,6 +149,13 @@ fn main() {
             commands::book_annotations,
             commands::list_annotations,
             commands::annotation_counts,
+            commands::update_metadata,
+            commands::get_online_metadata,
+            commands::set_online_metadata,
+            commands::ol_search,
+            commands::ol_work,
+            commands::ol_cover,
+            commands::ol_apply_cover,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Biblion");

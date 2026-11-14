@@ -15,7 +15,7 @@ use biblion_core::health::{DuplicateGroup, DuplicateKind, HealthBook, HealthCoun
 use biblion_core::scanner::{ScanEvent, ScanOptions, ScanReport};
 use biblion_core::{
     Annotation, AnnotationEntry, AnnotationQuery, AuthorEntry, Book, BookId, BookQuery, BookStats, Format, BookSummary,
-    Library, LibraryStats, NewAnnotation, Page, Shelf, TagEntry,
+    Library, LibraryStats, Metadata, NewAnnotation, Page, Shelf, TagEntry,
 };
 use serde::Serialize;
 use tauri::ipc::Channel;
@@ -24,6 +24,7 @@ use tauri::State;
 use crate::settings::Settings;
 use crate::backup::{self, AutoBackup, BackupSummary};
 use crate::music::{self, MusicLibrary};
+use crate::openlibrary::{self, Candidate, OlError, WorkDetails};
 use crate::watcher::FolderWatcher;
 
 /// Upper bound for one listing page (the grid asks for 200).
@@ -38,6 +39,7 @@ pub struct AppState {
     pub watcher: FolderWatcher,
     /// Tracks of the music folder's last listing (served by `music://`).
     pub music: Mutex<Vec<PathBuf>>,
+    pub openlibrary: Arc<openlibrary::Client>,
 }
 
 /// Error sent to the UI: a stable `code` to branch on plus a readable message.
@@ -441,6 +443,85 @@ pub async fn set_cover(state: State<'_, AppState>, id: BookId, image: Vec<u8>) -
     }
     let lib = state.lib.clone();
     blocking(move || lib.set_cover(id, &image)).await
+}
+
+/// Saves metadata edited by the user (or picked from Open Library). The book
+/// is marked as edited, so rescans keep these values.
+#[tauri::command]
+pub async fn update_metadata(state: State<'_, AppState>, id: BookId, metadata: Metadata) -> CmdResult<()> {
+    let lib = state.lib.clone();
+    blocking(move || lib.update_metadata(id, metadata)).await
+}
+
+// ── Open Library ─────────────────────────────────────────────────────────
+
+impl From<OlError> for CmdError {
+    fn from(e: OlError) -> Self {
+        let code = match e {
+            OlError::Offline(_) => "offline",
+            OlError::Http(404) => "not_found",
+            OlError::Http(_) => "online_error",
+            OlError::Invalid(_) => "invalid_argument",
+        };
+        Self::new(code, e.to_string())
+    }
+}
+
+#[tauri::command]
+pub fn get_online_metadata(state: State<'_, AppState>) -> bool {
+    state.settings.lock().unwrap().online_metadata.unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn set_online_metadata(state: State<'_, AppState>, on: bool) -> CmdResult<()> {
+    update_settings(&state, |s| {
+        s.online_metadata = Some(on);
+        Ok(())
+    })?;
+    Ok(())
+}
+
+/// Runs a request on the blocking pool, only when the user allowed it.
+async fn online<T, F>(state: &AppState, f: F) -> CmdResult<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&openlibrary::Client) -> Result<T, CmdError> + Send + 'static,
+{
+    if !state.settings.lock().unwrap().online_metadata.unwrap_or(false) {
+        return Err(CmdError::new("disabled", "Looking up books online is turned off in Settings"));
+    }
+    let client = state.openlibrary.clone();
+    tauri::async_runtime::spawn_blocking(move || f(&client))
+        .await
+        .map_err(|e| CmdError::new("internal", format!("background task failed: {e}")))?
+}
+
+#[tauri::command]
+pub async fn ol_search(state: State<'_, AppState>, title: String, author: String, isbn: String) -> CmdResult<Vec<Candidate>> {
+    online(&state, move |c| Ok(c.search(&title, &author, &isbn)?)).await
+}
+
+#[tauri::command]
+pub async fn ol_work(state: State<'_, AppState>, key: String) -> CmdResult<WorkDetails> {
+    online(&state, move |c| Ok(c.work(&key)?)).await
+}
+
+/// A cover preview, sent as raw bytes.
+#[tauri::command]
+pub async fn ol_cover(state: State<'_, AppState>, cover_id: i64) -> CmdResult<tauri::ipc::Response> {
+    let bytes = online(&state, move |c| Ok(c.cover(cover_id, false)?)).await?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Downloads the large cover and makes it the book's cover.
+#[tauri::command]
+pub async fn ol_apply_cover(state: State<'_, AppState>, id: BookId, cover_id: i64) -> CmdResult<String> {
+    let lib = state.lib.clone();
+    online(&state, move |c| {
+        let bytes = c.cover(cover_id, true)?;
+        Ok(lib.replace_cover(id, &bytes)?)
+    })
+    .await
 }
 
 // ── Music ────────────────────────────────────────────────────────────────
