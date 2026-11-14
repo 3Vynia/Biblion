@@ -10,7 +10,9 @@ import type {
   DuplicateKind,
   Format,
   HealthBook,
+  Metadata,
   NewAnnotation,
+  OlCandidate,
   Shelf,
 } from '../src/lib/types'
 
@@ -91,6 +93,15 @@ function query(q: BookQuery) {
 function book(id: number): Book {
   const r = rows[id - 1]
   if (!r) throw { code: 'not_found', message: `not found: book ${id}` }
+  const edited = editedMetadata.get(id)
+  const chosenCover = chosenCovers.get(id) ?? null
+  const b = mockBook(r, id)
+  return edited || chosenCover
+    ? { ...b, metadata: edited ?? b.metadata, cover_key: chosenCover ?? b.cover_key, has_cover: b.has_cover || !!chosenCover }
+    : b
+}
+
+function mockBook(r: Row, id: number): Book {
   return {
     id: r.id,
     path: `/books/${r.authors[0]}/${r.title}.${r.format}`,
@@ -145,6 +156,45 @@ let readerSettings: unknown = null
 let uiSettings: unknown = null
 let ambienceSettings: unknown = null
 let watchFolders = true
+let onlineMetadata = false
+const editedMetadata = new Map<number, Metadata>()
+const chosenCovers = new Map<number, string>()
+
+// Open Library, made up: "zzz" finds nothing, "offline" fails like a lost connection.
+function olSearch(title: string, author: string): OlCandidate[] {
+  if (/offline/i.test(title)) throw { code: 'offline', message: 'Could not reach Open Library: no connection' }
+  if (/zzz/i.test(title)) return []
+  const base = title.trim() || 'Untitled'
+  return [0, 1, 2, 3, 4].map((i) => ({
+    key: `/works/OL${100 + i}W`,
+    title: i === 0 ? base : `${base} ${['(Illustrated)', 'Collected', 'Annotated', 'Revisited'][i - 1]}`,
+    subtitle: i === 0 ? 'There and Back Again' : null,
+    authors: [author.trim() || 'Anne Author'],
+    year: 1937 + i * 11,
+    publishers: ['Mock Press'],
+    isbn: null,
+    cover_id: i === 3 ? null : 9000 + i,
+    languages: ['en'],
+    pages: 300 + i,
+    editions: i === 0 ? 482 : 3,
+    subjects: ['Dragons', 'Adventure', 'Maps'],
+  }))
+}
+
+/** A small coloured JPEG standing in for a downloaded cover. */
+async function mockCover(id: number): Promise<ArrayBuffer> {
+  const canvas = new OffscreenCanvas(180, 270)
+  const g = canvas.getContext('2d')!
+  const grad = g.createLinearGradient(0, 0, 180, 270)
+  grad.addColorStop(0, `hsl(${(id * 47) % 360} 55% 45%)`)
+  grad.addColorStop(1, `hsl(${(id * 47 + 60) % 360} 60% 22%)`)
+  g.fillStyle = grad
+  g.fillRect(0, 0, 180, 270)
+  g.fillStyle = 'rgb(255 255 255 / 0.85)'
+  g.font = 'bold 22px serif'
+  g.fillText(`Cover ${id}`, 24, 140)
+  return (await canvas.convertToBlob({ type: 'image/jpeg' })).arrayBuffer()
+}
 let autoBackup = true
 let musicFolder: string | null = null
 const MOCK_TRACKS = ['Morning light', 'Slow river', 'Reading by the window', 'Night garden'].map((title, index) => ({
@@ -395,6 +445,25 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       ids.forEach((id) => unreadable.delete(id))
       return { found: ids.length, unchanged: 0, added: 0, updated: ids.length, missing: 0, errors: 0, covers: 0, elapsed_ms: 40, error_samples: [] }
     }
+    case 'get_online_metadata':
+      return onlineMetadata
+    case 'set_online_metadata':
+      onlineMetadata = args.on as boolean
+      return null
+    case 'update_metadata':
+      editedMetadata.set(args.id as number, args.metadata as Metadata)
+      return null
+    case 'ol_search':
+    case 'ol_work':
+    case 'ol_cover':
+    case 'ol_apply_cover':
+      if (!onlineMetadata) throw { code: 'disabled', message: 'Looking up books online is turned off in Settings' }
+      if (cmd === 'ol_search') return olSearch(args.title as string, args.author as string)
+      if (cmd === 'ol_work')
+        return { description: 'A long journey there and back again, told for the first time in full.', subjects: ['Dragons', 'Dwarves', 'Treasure'] }
+      if (cmd === 'ol_cover') return mockCover(args.coverId as number)
+      chosenCovers.set(args.id as number, `ol-${args.coverId}`)
+      return `ol-${args.coverId}`
     case 'get_watch_folders':
       return watchFolders
     case 'set_watch_folders':

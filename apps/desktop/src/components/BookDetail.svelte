@@ -1,6 +1,8 @@
 <script lang="ts">
   import BookCover from './BookCover.svelte'
   import Icon from './Icon.svelte'
+  import OnlineLookup from './OnlineLookup.svelte'
+  import { onlineMetadata } from '../lib/onlineMetadata.svelte'
   import { api, errorMessage } from '../lib/api'
   import {
     FORMAT_LABEL,
@@ -18,7 +20,7 @@
   } from '../lib/format'
   import { confirm } from '../lib/dialog.svelte'
   import { library } from '../lib/library.svelte'
-  import { slideIn } from '../lib/motion'
+  import { rise, slideIn } from '../lib/motion'
   import { authorRoute, nav, seriesRoute, tagRoute } from '../lib/nav.svelte'
   import type { Book, BookStats } from '../lib/types'
 
@@ -149,6 +151,38 @@
     }
   }
 
+  // ── Open Library ──
+  let lookup = $state(false)
+  let updated = $state<string | null>(null)
+  let updatedTimer: ReturnType<typeof setTimeout> | undefined
+
+  async function findOnline() {
+    await onlineMetadata.load()
+    if (!onlineMetadata.enabled) {
+      const ok = await confirm({
+        title: 'Look this book up online?',
+        message:
+          'Biblion will send its title, author and ISBN to Open Library (openlibrary.org), and nothing else. You can turn this off any time in Settings, under Privacy & online.',
+        confirmLabel: 'Turn on and search',
+      })
+      if (!ok) return
+      try {
+        await onlineMetadata.set(true)
+      } catch (e) {
+        error = errorMessage(e)
+        return
+      }
+    }
+    lookup = true
+  }
+
+  function lookedUp(message: string) {
+    lookup = false
+    updated = message
+    clearTimeout(updatedTimer)
+    updatedTimer = setTimeout(() => (updated = null), 5000)
+  }
+
   async function openAuthor(name: string) {
     try {
       const page = await api.listAuthors(name, 0, 20)
@@ -221,7 +255,13 @@
           <span class="heart-icon" class:pop={heartPop > 0 && book.favorite}><Icon name="heart" size={18} filled={book.favorite} /></span>
         {/key}
       </button>
+      <button class="icon-btn" onclick={findOnline} title="Find details online" aria-label="Find details online">
+        <Icon name="globe" size={18} />
+      </button>
     </div>
+    {#if updated}
+      <p class="updated" role="status" in:rise={{ y: 6, duration: 240 }}><Icon name="check" size={14} strokeWidth={2.6} /> {updated}</p>
+    {/if}
     {#if !READABLE.has(book.format)}
       <p class="muted small">{FORMAT_LABEL[book.format]} reader coming soon</p>
     {/if}
@@ -301,6 +341,9 @@
       <dd class="path" title={book.path}>{book.path}</dd>
     </dl>
     {#if error}<p class="error small">{error}</p>{/if}
+    {#if lookup}
+      <OnlineLookup {book} onclose={() => (lookup = false)} ondone={lookedUp} />
+    {/if}
   {/if}
 </aside>
 
@@ -588,6 +631,18 @@
 
   .small {
     font-size: 12px;
+  }
+
+  .updated {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 8px;
+    padding: 7px 11px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    color: var(--accent);
+    background: var(--accent-soft);
   }
 
   .progress-row {
