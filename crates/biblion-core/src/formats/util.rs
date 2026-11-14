@@ -114,18 +114,27 @@ pub fn resolve_zip_path(base_dir: &str, href: &str) -> String {
 }
 
 /// Strips HTML tags and collapses whitespace (for descriptions).
+/// Plain text from a description that may be HTML. Paragraphs survive
+/// (block tags and line breaks become blank lines); other runs of
+/// whitespace collapse to one space.
 pub fn strip_html(s: &str) -> String {
+    const BLOCKS: &[&str] = &["p", "/p", "br", "br/", "div", "/div", "li", "h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "/blockquote"];
     let mut out = String::with_capacity(s.len());
+    let mut tag = String::new();
     let mut in_tag = false;
     for c in s.chars() {
         match c {
             '<' => {
                 in_tag = true;
-                out.push(' ');
+                tag.clear();
             }
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(c),
-            _ => {}
+            '>' if in_tag => {
+                in_tag = false;
+                let name = tag.trim().split_whitespace().next().unwrap_or("").to_ascii_lowercase();
+                out.push(if BLOCKS.contains(&name.trim_end_matches('/')) || BLOCKS.contains(&name.as_str()) { '\n' } else { ' ' });
+            }
+            _ if in_tag => tag.push(c),
+            _ => out.push(c),
         }
     }
     let out = out
@@ -135,7 +144,7 @@ pub fn strip_html(s: &str) -> String {
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#39;", "'");
-    collapse_ws(&out)
+    out.split('\n').map(collapse_ws).filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n")
 }
 
 pub fn collapse_ws(s: &str) -> String {
@@ -539,6 +548,14 @@ pub fn fold_diacritics(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn descriptions_keep_their_paragraphs() {
+        assert_eq!(strip_html("<p>One   line.</p><p>Two <b>bold</b>.</p>"), "One line.\n\nTwo bold .");
+        assert_eq!(strip_html("First.\n\n\nSecond.<br/>Third &amp; last"), "First.\n\nSecond.\n\nThird & last");
+        assert_eq!(strip_html("  <div> </div> "), "");
+        assert_eq!(strip_html("a < b and c"), "a");
+    }
 
     #[test]
     fn natural_sort() {
