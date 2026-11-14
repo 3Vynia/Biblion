@@ -27,9 +27,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "deb",
+      "rpm",
+      "appimage",
+      "nsis"
+    ],
     "category": "Education",
-    "shortDescription": "Local digital library manager",
+    "shortDescription": "Your local digital library",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,6 +42,38 @@
       "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Crystal",
+    "copyright": "© 2026 Crystal. All rights reserved.",
+    "longDescription": "Biblion organises and reads very large local libraries: EPUB, MOBI, AZW3, PDF, CBZ and CBR. A fast cover grid, authors, series and collections, highlights and notes, a dictionary, reading statistics, a generative reading ambience, backups, and book details from Open Library and AniList when you ask. Everything stays on your computer.",
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "gstreamer1.0-plugins-base",
+          "gstreamer1.0-plugins-good"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1",
+          "gstreamer1-plugins-base",
+          "gstreamer1-plugins-good"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English",
+          "Spanish"
+        ],
+        "displayLanguageSelector": true
+      }
+    }
   }
 }
