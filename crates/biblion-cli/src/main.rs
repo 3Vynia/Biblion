@@ -78,6 +78,54 @@ enum Cmd {
     },
     /// Benchmark typical UI queries.
     Bench,
+    /// Sets details of many books from a JSON file: a list of objects with a
+    /// "path" and the fields to change ("title", "authors", "series",
+    /// "series_index", "publisher", "published", "language", "tags",
+    /// "description"…). Fields left out keep their value; the books count as
+    /// edited by hand, so rescans keep the changes.
+    ApplyMetadata {
+        file: PathBuf,
+        /// Only report what would change.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+fn apply_metadata(lib: &Library, file: &std::path::Path, dry_run: bool) -> Result<()> {
+    let entries: Vec<serde_json::Map<String, serde_json::Value>> = serde_json::from_slice(&std::fs::read(file)?)?;
+    let (mut changed, mut same, mut missing) = (0, 0, Vec::new());
+    for entry in entries {
+        let Some(path) = entry.get("path").and_then(|p| p.as_str()) else { anyhow::bail!("an entry has no \"path\"") };
+        let Some(id) = lib.book_at(std::path::Path::new(path))? else {
+            missing.push(path.to_owned());
+            continue;
+        };
+        let current = lib.get_book(id)?.metadata;
+        let mut value = serde_json::to_value(&current)?;
+        for (k, v) in &entry {
+            if k != "path" {
+                if value.get(k).is_none() {
+                    anyhow::bail!("unknown field \"{k}\" for {path}");
+                }
+                value[k] = v.clone();
+            }
+        }
+        let next: biblion_core::Metadata = serde_json::from_value(value.clone())?;
+        // Compared after the round trip, so 16 and 16.0 are the same number.
+        if serde_json::to_value(&next)? == serde_json::to_value(&current)? {
+            same += 1;
+            continue;
+        }
+        changed += 1;
+        if !dry_run {
+            lib.update_metadata(id, next)?;
+        }
+    }
+    println!("{} {changed} books, {same} already up to date, {} not in the library", if dry_run { "Would change" } else { "Changed" }, missing.len());
+    for m in missing.iter().take(10) {
+        println!("  not found: {m}");
+    }
+    Ok(())
 }
 
 fn print_page(page: &biblion_core::Page<biblion_core::BookSummary>) {
@@ -155,6 +203,7 @@ fn main() -> Result<()> {
             println!("ok");
         }
         Cmd::Bench => bench(&lib)?,
+        Cmd::ApplyMetadata { file, dry_run } => apply_metadata(&lib, &file, dry_run)?,
         Cmd::GenTest { .. } => unreachable!(),
     }
     Ok(())
