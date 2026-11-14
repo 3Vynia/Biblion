@@ -160,6 +160,7 @@ let watchFolders = true
 // Reading aloud: the voice starts not downloaded; "speech" is a short tone.
 let ttsInstalled = false
 const TTS_VOICES = [
+  { id: 'ef_dora+af_bella', name: 'Dora · Bella', lang: 'es' },
   { id: 'ef_dora', name: 'Dora', lang: 'es' },
   { id: 'em_alex', name: 'Alex', lang: 'es' },
   { id: 'af_heart', name: 'Heart', lang: 'en-us' },

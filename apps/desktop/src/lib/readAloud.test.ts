@@ -28,6 +28,7 @@ describe('reading aloud', () => {
 
   it('picks a voice for the book language', () => {
     const voices = [
+      { id: 'ef_dora+af_bella', name: 'Dora · Bella', lang: 'es' },
       { id: 'ef_dora', name: 'Dora', lang: 'es' },
       { id: 'em_alex', name: 'Alex', lang: 'es' },
       { id: 'af_heart', name: 'Heart', lang: 'en-us' },
@@ -37,9 +38,9 @@ describe('reading aloud', () => {
     expect(voiceLang('en')).toBe('en-us')
     expect(voiceLang('en-GB')).toBe('en-gb')
     expect(voiceLang('fr')).toBeNull()
-    expect(pickVoice(voices, 'es', {})).toBe('ef_dora')
+    expect(pickVoice(voices, 'es', {})).toBe('ef_dora+af_bella')
     expect(pickVoice(voices, 'es', { es: 'em_alex' })).toBe('em_alex')
     expect(pickVoice(voices, 'en-us', { 'en-us': 'gone' })).toBe('af_heart')
-    expect(pickVoice(voices, null, {})).toBe('ef_dora')
+    expect(pickVoice(voices, null, {})).toBe('ef_dora+af_bella')
   })
 })

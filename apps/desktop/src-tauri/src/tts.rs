@@ -26,6 +26,8 @@ const VOICES_BYTES: u64 = 28_214_398;
 
 /// Voices offered, with the espeak language that reads their text.
 pub const VOICES: &[(&str, &str, &str)] = &[
+    // Dora's Spanish with Bella's warmth: the most natural Spanish found.
+    ("ef_dora+af_bella", "Dora · Bella", "es"),
     ("ef_dora", "Dora", "es"),
     ("em_alex", "Alex", "es"),
     ("em_santa", "Santa", "es"),
@@ -210,13 +212,27 @@ impl Engine {
         Ok(Self { session, voices, vocab })
     }
 
+    /// A voice's style table; "a+b" is an even blend of two voices.
+    fn style(&mut self, voice: &str) -> Result<&Vec<f32>, String> {
+        if !self.voices.contains_key(voice) {
+            let parts: Vec<&Vec<f32>> = voice.split('+').map(|v| self.voices.get(v).ok_or_else(|| format!("unknown voice {v}"))).collect::<Result<_, _>>()?;
+            if parts.len() < 2 || parts.iter().any(|p| p.len() != parts[0].len()) {
+                return Err(format!("unknown voice {voice}"));
+            }
+            let n = parts.len() as f32;
+            let blend = (0..parts[0].len()).map(|i| parts.iter().map(|p| p[i]).sum::<f32>() / n).collect();
+            self.voices.insert(voice.to_owned(), blend);
+        }
+        Ok(&self.voices[voice])
+    }
+
     fn synth(&mut self, phonemes: &str, voice: &str, speed: f32) -> Result<Vec<f32>, String> {
-        let style_table = self.voices.get(voice).ok_or_else(|| format!("unknown voice {voice}"))?;
         let ids: Vec<i64> = phonemes.chars().filter_map(|c| self.vocab.get(&c).copied()).take(MAX_PHONEMES).collect();
         if ids.is_empty() {
             return Ok(Vec::new());
         }
         // The voice's style depends on the length of what it says.
+        let style_table = self.style(voice)?;
         let row = ids.len().min(style_table.len() / STYLE_DIM - 1);
         let style = style_table[row * STYLE_DIM..(row + 1) * STYLE_DIM].to_vec();
         let mut tokens = Vec::with_capacity(ids.len() + 2);
@@ -413,6 +429,14 @@ mod tests {
     }
 
     #[test]
+    fn every_offered_voice_has_a_language() {
+        for (id, _, lang) in VOICES {
+            assert!(["es", "en-us", "en-gb"].contains(lang), "{id}");
+        }
+        assert_eq!(VOICES[0].0, "ef_dora+af_bella", "the Spanish default comes first");
+    }
+
+    #[test]
     fn long_phonemes_are_split_at_spaces() {
         let long = vec!["abcdefghi"; 120].join(" ");
         let parts = split_phonemes(&long);
@@ -454,10 +478,10 @@ mod live {
         let tts = Tts { dir: dir.clone(), bundled_espeak: None, espeak: Mutex::new(None), engine: Mutex::new(None) };
         let text = "Era una tarde tranquila, y la biblioteca olía a papel y a lluvia. Entre los estantes, alguien pasó una página.";
         let t = std::time::Instant::now();
-        let audio = tts.speak(text, "ef_dora", 0.95).unwrap();
+        let audio = tts.speak(text, "ef_dora+af_bella", 0.95).unwrap();
         let first = t.elapsed();
         let t = std::time::Instant::now();
-        let again = tts.speak(text, "ef_dora", 0.95).unwrap();
+        let again = tts.speak(text, "ef_dora+af_bella", 0.95).unwrap();
         println!("{:.1}s of audio; first call {:?} (loads the model), then {:?}", audio.len() as f32 / SAMPLE_RATE as f32, first, t.elapsed());
         assert_eq!(audio.len(), again.len());
         let mut wav = Vec::new();
