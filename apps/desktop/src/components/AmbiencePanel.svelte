@@ -17,9 +17,30 @@
   interface Props {
     /** Smaller layout for the reader's side panel. */
     compact?: boolean
+    /** Split the controls into tabs below the "now playing" header (Settings). */
+    tabs?: boolean
   }
 
-  let { compact = false }: Props = $props()
+  let { compact = false, tabs = false }: Props = $props()
+
+  const TABS = [
+    { id: 'soundscape', label: 'Soundscape' },
+    { id: 'sounds', label: 'Sounds & scenes' },
+    { id: 'music', label: 'Your music' },
+    { id: 'timer', label: 'Timer & options' },
+  ] as const
+  type Tab = (typeof TABS)[number]['id']
+  let tab = $state<Tab>('soundscape')
+  const show = (t: Tab) => !tabs || tab === t
+
+  function tabKey(e: KeyboardEvent) {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+    if (!step) return
+    e.preventDefault()
+    const i = (TABS.findIndex((t) => t.id === tab) + step + TABS.length) % TABS.length
+    tab = TABS[i].id
+    ;(e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-tab="${tab}"]`)?.focus()
+  }
 
   const s = $derived(ambience.value)
   const active = $derived(ambience.active)
@@ -91,192 +112,223 @@
     </div>
   </div>
 
-  <section>
-    <h4>Soundscape</h4>
-    <div class="modes" role="radiogroup" aria-label="Mode">
-      {#each MODES as m (m.id)}
-        {@const [a, b] = palette(m.id, hour)}
+  {#if tabs}
+    <div class="tabs" role="tablist" aria-label="Ambience settings" tabindex="-1" onkeydown={tabKey}>
+      {#each TABS as t (t.id)}
         <button
-          class="mode"
-          class:on={s.soundscape.on && s.soundscape.mode === m.id}
-          style:--m1={a}
-          style:--m2={b}
-          role="radio"
-          aria-label={m.label}
-          title={m.hint}
-          aria-checked={s.soundscape.on && s.soundscape.mode === m.id}
-          onclick={() => ambience.setSoundscape({ on: true, mode: m.id as Mode })}
+          role="tab"
+          data-tab={t.id}
+          aria-selected={tab === t.id}
+          tabindex={tab === t.id ? 0 : -1}
+          class:on={tab === t.id}
+          onclick={() => (tab = t.id)}
         >
-          <span class="swatch"></span>
-          <span class="mode-name">{m.label}</span>
-          {#if !compact}<span class="mode-hint">{m.hint}</span>{/if}
+          {t.label}
+          {#if t.id === 'soundscape' && s.soundscape.on}<span class="live" aria-hidden="true"></span>{/if}
+          {#if t.id === 'sounds' && LAYERS.some((l) => s.layers[l.id].on)}<span class="live" aria-hidden="true"></span>{/if}
+          {#if t.id === 'music' && s.music.on && lib?.tracks.length}<span class="live" aria-hidden="true"></span>{/if}
+          {#if t.id === 'timer' && ambience.timerEnds}<span class="badge">{remaining}m</span>{/if}
         </button>
       {/each}
     </div>
-    {#if s.soundscape.on}
-      <div class="controls" in:rise={{ y: 4, duration: 200 }}>
-        <label class="slider labeled">
-          <span class="name">Volume</span>
-          <input type="range" min="0" max="1" step="0.01" value={s.soundscape.volume} use:rangeFill={s.soundscape.volume} oninput={(e) => ambience.setSoundscape({ volume: Number(e.currentTarget.value) })} />
-        </label>
-        <label class="slider labeled">
-          <span class="name">Energy</span>
-          <input type="range" min="0" max="1" step="0.01" value={s.soundscape.energy} use:rangeFill={s.soundscape.energy} oninput={(e) => ambience.setSoundscape({ energy: Number(e.currentTarget.value) })} />
-          <span class="ends"><span>Sparse</span><span>Lively</span></span>
-        </label>
-        <label class="slider labeled">
-          <span class="name">Warmth</span>
-          <input type="range" min="0" max="1" step="0.01" value={s.soundscape.warmth} use:rangeFill={s.soundscape.warmth} oninput={(e) => ambience.setSoundscape({ warmth: Number(e.currentTarget.value) })} />
-          <span class="ends"><span>Dark</span><span>Bright</span></span>
-        </label>
-        <Switch
-          label="Follow the time of day"
-          description="Brighter in the morning, deeper at night."
-          checked={s.soundscape.adaptToTime}
-          onchange={(v) => ambience.setSoundscape({ adaptToTime: v })}
-        />
-        <Switch
-          label="Respond to my reading"
-          description="A soft note when you turn a page; calmer when you pause."
-          checked={s.soundscape.reactToReading}
-          onchange={(v) => ambience.setSoundscape({ reactToReading: v })}
-        />
-        <button class="text" onclick={() => ambience.setSoundscape({ on: false })}>Turn the soundscape off</button>
+  {/if}
+
+  {#if show('soundscape')}
+    <section>
+      <h4>Soundscape</h4>
+      <div class="modes" role="radiogroup" aria-label="Mode">
+        {#each MODES as m (m.id)}
+          {@const [a, b] = palette(m.id, hour)}
+          <button
+            class="mode"
+            class:on={s.soundscape.on && s.soundscape.mode === m.id}
+            style:--m1={a}
+            style:--m2={b}
+            role="radio"
+            aria-label={m.label}
+            title={m.hint}
+            aria-checked={s.soundscape.on && s.soundscape.mode === m.id}
+            onclick={() => ambience.setSoundscape({ on: true, mode: m.id as Mode })}
+          >
+            <span class="swatch"></span>
+            <span class="mode-name">{m.label}</span>
+            {#if !compact}<span class="mode-hint">{m.hint}</span>{/if}
+          </button>
+        {/each}
       </div>
-    {/if}
-  </section>
-
-  <section>
-    <div class="row-head">
-      <h4>Scenes</h4>
-      <button class="text" onclick={saveMix} title="Save the current mix as a scene"><Icon name="save" size={14} /> Save mix</button>
-    </div>
-    <div class="scenes">
-      {#each ambience.scenes as scene (scene.id)}
-        <span class="scene-wrap">
-          <button class="scene" class:on={active?.id === scene.id} onclick={() => ambience.useScene(scene)}>{scene.name}</button>
-          {#if scene.id.startsWith('user-')}
-            <button class="remove" onclick={() => ambience.deleteScene(scene as Scene)} aria-label="Delete scene {scene.name}" title="Delete scene"
-              ><Icon name="close" size={11} /></button
-            >
-          {/if}
-        </span>
-      {/each}
-    </div>
-  </section>
-
-  <section class="music">
-    <div class="row-head">
-      <h4>Your music</h4>
-      {#if lib?.folder}
-        <span class="folder-actions">
-          <button class="text" onclick={pickMusicFolder} title={lib.folder}>Change folder</button>
-          <button class="text muted" onclick={() => ambience.forgetMusicFolder()}>Stop using it</button>
-        </span>
-      {/if}
-    </div>
-    {#if !lib?.folder}
-      <button class="choose" onclick={pickMusicFolder}>
-        <Icon name="music" size={16} />
-        <span>
-          <strong>Choose a music folder…</strong>
-          <small>Your own songs, mixed with the ambience. MP3, OGG, Opus, FLAC, M4A or WAV.</small>
-        </span>
-      </button>
-    {:else if lib.tracks.length === 0}
-      <p class="empty-music">No music found in {lib.folder}.</p>
-    {:else}
-      <div class="layer" class:on={s.music.on}>
-        <button class="toggle" role="switch" aria-checked={s.music.on} aria-label="Play my music" onclick={() => ambience.setMusic({ on: !s.music.on })}>
-          <span class="dot"></span>
-          Play my music
-          <span class="count">{lib.tracks.length} {lib.tracks.length === 1 ? 'track' : 'tracks'}</span>
-        </button>
-        {#if s.music.on}
-          <div class="now" in:rise={{ y: 4, duration: 200 }}>
-            <div class="track">
-              <span class="track-title">{ambience.track?.title ?? '—'}</span>
-              {#if ambience.track?.folder}<span class="track-folder">{ambience.track.folder}</span>{/if}
-            </div>
-            <div class="transport">
-              <button class="icon" onclick={() => ambience.prevTrack()} aria-label="Previous track" title="Previous track"><Icon name="skip-back" size={14} /></button>
-              <button class="icon" onclick={() => ambience.nextTrack()} aria-label="Next track" title="Next track"><Icon name="skip-forward" size={14} /></button>
-              <button
-                class="icon"
-                class:on={s.music.shuffle}
-                onclick={() => ambience.setMusic({ shuffle: !s.music.shuffle })}
-                aria-label="Shuffle"
-                aria-pressed={s.music.shuffle}
-                title="Shuffle"><Icon name="shuffle" size={14} /></button
-              >
-            </div>
-          </div>
-          <label class="slider">
-            <span class="mini">Vol</span>
-            <input type="range" min="0" max="1" step="0.01" value={s.music.volume} use:rangeFill={s.music.volume} oninput={(e) => ambience.setMusic({ volume: Number(e.currentTarget.value) })} aria-label="Music volume" />
+      {#if s.soundscape.on}
+        <div class="controls" in:rise={{ y: 4, duration: 200 }}>
+          <label class="slider labeled">
+            <span class="name">Volume</span>
+            <input type="range" min="0" max="1" step="0.01" value={s.soundscape.volume} use:rangeFill={s.soundscape.volume} oninput={(e) => ambience.setSoundscape({ volume: Number(e.currentTarget.value) })} />
           </label>
+          <label class="slider labeled">
+            <span class="name">Energy</span>
+            <input type="range" min="0" max="1" step="0.01" value={s.soundscape.energy} use:rangeFill={s.soundscape.energy} oninput={(e) => ambience.setSoundscape({ energy: Number(e.currentTarget.value) })} />
+            <span class="ends"><span>Sparse</span><span>Lively</span></span>
+          </label>
+          <label class="slider labeled">
+            <span class="name">Warmth</span>
+            <input type="range" min="0" max="1" step="0.01" value={s.soundscape.warmth} use:rangeFill={s.soundscape.warmth} oninput={(e) => ambience.setSoundscape({ warmth: Number(e.currentTarget.value) })} />
+            <span class="ends"><span>Dark</span><span>Bright</span></span>
+          </label>
+          <Switch
+            label="Follow the time of day"
+            description="Brighter in the morning, deeper at night."
+            checked={s.soundscape.adaptToTime}
+            onchange={(v) => ambience.setSoundscape({ adaptToTime: v })}
+          />
+          <Switch
+            label="Respond to my reading"
+            description="A soft note when you turn a page; calmer when you pause."
+            checked={s.soundscape.reactToReading}
+            onchange={(v) => ambience.setSoundscape({ reactToReading: v })}
+          />
+          <button class="text" onclick={() => ambience.setSoundscape({ on: false })}>Turn the soundscape off</button>
+        </div>
+      {/if}
+    </section>
+  {/if}
+
+  {#if show('sounds')}
+    <section>
+      <div class="row-head">
+        <h4>Scenes</h4>
+        <button class="text" onclick={saveMix} title="Save the current mix as a scene"><Icon name="save" size={14} /> Save mix</button>
+      </div>
+      <div class="scenes">
+        {#each ambience.scenes as scene (scene.id)}
+          <span class="scene-wrap">
+            <button class="scene" class:on={active?.id === scene.id} onclick={() => ambience.useScene(scene)}>{scene.name}</button>
+            {#if scene.id.startsWith('user-')}
+              <button class="remove" onclick={() => ambience.deleteScene(scene as Scene)} aria-label="Delete scene {scene.name}" title="Delete scene"
+                ><Icon name="close" size={11} /></button
+              >
+            {/if}
+          </span>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
+  {#if show('music')}
+    <section class="music">
+      <div class="row-head">
+        <h4>Your music</h4>
+        {#if lib?.folder}
+          <span class="folder-actions">
+            <button class="text" onclick={pickMusicFolder} title={lib.folder}>Change folder</button>
+            <button class="text muted" onclick={() => ambience.forgetMusicFolder()}>Stop using it</button>
+          </span>
         {/if}
       </div>
-    {/if}
-    {#if musicError}<p class="error">{musicError}</p>{/if}
-  </section>
-
-  <section>
-    <h4>Textures</h4>
-    {#each groups as group (group)}
-      <p class="group">{group}</p>
-      {#each LAYERS.filter((l) => l.group === group) as layer (layer.id)}
-        {@const st = s.layers[layer.id]}
-        <div class="layer" class:on={st.on}>
-          <button
-            class="toggle"
-            role="switch"
-            aria-checked={st.on}
-            aria-label={layer.label}
-            onclick={() => ambience.setLayer(layer.id as LayerId, { on: !st.on })}
-          >
+      {#if !lib?.folder}
+        <button class="choose" onclick={pickMusicFolder}>
+          <Icon name="music" size={16} />
+          <span>
+            <strong>Choose a music folder…</strong>
+            <small>Your own songs, mixed with the ambience. MP3, OGG, Opus, FLAC, M4A or WAV.</small>
+          </span>
+        </button>
+      {:else if lib.tracks.length === 0}
+        <p class="empty-music">No music found in {lib.folder}.</p>
+      {:else}
+        <div class="layer" class:on={s.music.on}>
+          <button class="toggle" role="switch" aria-checked={s.music.on} aria-label="Play my music" onclick={() => ambience.setMusic({ on: !s.music.on })}>
             <span class="dot"></span>
-            {layer.label}
+            Play my music
+            <span class="count">{lib.tracks.length} {lib.tracks.length === 1 ? 'track' : 'tracks'}</span>
           </button>
-          {#if st.on}
-            <div class="layer-controls" in:rise={{ y: 4, duration: 180 }}>
-              <label class="slider">
-                <span class="mini">Vol</span>
-                <input type="range" min="0" max="1" step="0.01" value={st.volume} use:rangeFill={st.volume} oninput={(e) => ambience.setLayer(layer.id, { volume: Number(e.currentTarget.value) })} aria-label="{layer.label} volume" />
-              </label>
-              {#if layer.tone}
-                <label class="slider labeled">
-                  <input type="range" min="0" max="1" step="0.01" value={st.tone} use:rangeFill={st.tone} oninput={(e) => ambience.setLayer(layer.id, { tone: Number(e.currentTarget.value) })} aria-label="{layer.label} character" />
-                  <span class="ends"><span>{layer.tone[0]}</span><span>{layer.tone[1]}</span></span>
-                </label>
-              {/if}
+          {#if s.music.on}
+            <div class="playing-now" in:rise={{ y: 4, duration: 200 }}>
+              <div class="track">
+                <span class="track-title">{ambience.track?.title ?? '—'}</span>
+                {#if ambience.track?.folder}<span class="track-folder">{ambience.track.folder}</span>{/if}
+              </div>
+              <div class="transport">
+                <button class="icon" onclick={() => ambience.prevTrack()} aria-label="Previous track" title="Previous track"><Icon name="skip-back" size={14} /></button>
+                <button class="icon" onclick={() => ambience.nextTrack()} aria-label="Next track" title="Next track"><Icon name="skip-forward" size={14} /></button>
+                <button
+                  class="icon"
+                  class:on={s.music.shuffle}
+                  onclick={() => ambience.setMusic({ shuffle: !s.music.shuffle })}
+                  aria-label="Shuffle"
+                  aria-pressed={s.music.shuffle}
+                  title="Shuffle"><Icon name="shuffle" size={14} /></button
+                >
+              </div>
             </div>
+            <label class="slider">
+              <span class="mini">Vol</span>
+              <input type="range" min="0" max="1" step="0.01" value={s.music.volume} use:rangeFill={s.music.volume} oninput={(e) => ambience.setMusic({ volume: Number(e.currentTarget.value) })} aria-label="Music volume" />
+            </label>
           {/if}
         </div>
-      {/each}
-    {/each}
-  </section>
+      {/if}
+      {#if musicError}<p class="error">{musicError}</p>{/if}
+    </section>
+  {/if}
 
-  <section>
-    <h4>Sleep timer</h4>
-    <div class="timers" role="radiogroup" aria-label="Sleep timer">
-      {#each TIMERS as m (m)}
-        <button class:on={s.timerMinutes === m} role="radio" aria-checked={s.timerMinutes === m} onclick={() => ambience.setTimer(m)}>{m ? `${m} min` : 'Off'}</button>
+  {#if show('sounds')}
+    <section>
+      <h4>Textures</h4>
+      {#each groups as group (group)}
+        <p class="group">{group}</p>
+        {#each LAYERS.filter((l) => l.group === group) as layer (layer.id)}
+          {@const st = s.layers[layer.id]}
+          <div class="layer" class:on={st.on}>
+            <button
+              class="toggle"
+              role="switch"
+              aria-checked={st.on}
+              aria-label={layer.label}
+              onclick={() => ambience.setLayer(layer.id as LayerId, { on: !st.on })}
+            >
+              <span class="dot"></span>
+              {layer.label}
+            </button>
+            {#if st.on}
+              <div class="layer-controls" in:rise={{ y: 4, duration: 180 }}>
+                <label class="slider">
+                  <span class="mini">Vol</span>
+                  <input type="range" min="0" max="1" step="0.01" value={st.volume} use:rangeFill={st.volume} oninput={(e) => ambience.setLayer(layer.id, { volume: Number(e.currentTarget.value) })} aria-label="{layer.label} volume" />
+                </label>
+                {#if layer.tone}
+                  <label class="slider labeled">
+                    <input type="range" min="0" max="1" step="0.01" value={st.tone} use:rangeFill={st.tone} oninput={(e) => ambience.setLayer(layer.id, { tone: Number(e.currentTarget.value) })} aria-label="{layer.label} character" />
+                    <span class="ends"><span>{layer.tone[0]}</span><span>{layer.tone[1]}</span></span>
+                  </label>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/each}
       {/each}
-    </div>
-  </section>
+    </section>
+  {/if}
 
-  <section>
-    <h4>Options</h4>
-    <Switch label="Start when I open a book" checked={s.autoStart} onchange={(v) => ambience.setOptions({ autoStart: v })} />
-    <Switch label="Page-turn sound" description="A soft paper sound on every page." checked={s.pageTurn} onchange={(v) => ambience.setOptions({ pageTurn: v })} />
-    {#if s.pageTurn}
-      <label class="slider labeled">
-        <span class="name">Page sound volume</span>
-        <input type="range" min="0" max="1" step="0.01" value={s.pageTurnVolume} use:rangeFill={s.pageTurnVolume} oninput={(e) => ambience.setOptions({ pageTurnVolume: Number(e.currentTarget.value) })} />
-      </label>
-    {/if}
-  </section>
+  {#if show('timer')}
+    <section>
+      <h4>Sleep timer</h4>
+      <div class="timers" role="radiogroup" aria-label="Sleep timer">
+        {#each TIMERS as m (m)}
+          <button class:on={s.timerMinutes === m} role="radio" aria-checked={s.timerMinutes === m} onclick={() => ambience.setTimer(m)}>{m ? `${m} min` : 'Off'}</button>
+        {/each}
+      </div>
+    </section>
+
+    <section>
+      <h4>Options</h4>
+      <Switch label="Start when I open a book" checked={s.autoStart} onchange={(v) => ambience.setOptions({ autoStart: v })} />
+      <Switch label="Page-turn sound" description="A soft paper sound on every page." checked={s.pageTurn} onchange={(v) => ambience.setOptions({ pageTurn: v })} />
+      {#if s.pageTurn}
+        <label class="slider labeled">
+          <span class="name">Page sound volume</span>
+          <input type="range" min="0" max="1" step="0.01" value={s.pageTurnVolume} use:rangeFill={s.pageTurnVolume} oninput={(e) => ambience.setOptions({ pageTurnVolume: Number(e.currentTarget.value) })} />
+        </label>
+      {/if}
+    </section>
+  {/if}
 </div>
 
 <style>
@@ -355,7 +407,7 @@
     color: var(--a-accent);
   }
 
-  strong {
+  .now strong {
     font-family: var(--serif);
     font-size: 19px;
   }
@@ -370,6 +422,62 @@
 
   section {
     margin-top: 18px;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin: 18px 0 4px;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--a-hover);
+  }
+
+  .tabs button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--a-muted);
+    font-size: 13px;
+    white-space: nowrap;
+    transition:
+      background 180ms ease,
+      color 180ms ease;
+  }
+
+  .tabs button:hover:not(:disabled) {
+    background: transparent;
+    color: var(--a-fg);
+  }
+
+  .tabs button.on,
+  .tabs button.on:hover:not(:disabled) {
+    background: var(--a-card);
+    color: var(--a-accent);
+    font-weight: 600;
+    box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+  }
+
+  .live {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--a-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--a-accent) 25%, transparent);
+  }
+
+  .badge {
+    padding: 0 6px;
+    border-radius: 8px;
+    font-size: 11px;
+    background: color-mix(in srgb, var(--a-accent) 18%, transparent);
+    color: var(--a-accent);
   }
 
   h4 {
@@ -443,7 +551,7 @@
     color: var(--a-muted);
   }
 
-  .now {
+  .playing-now {
     display: flex;
     align-items: center;
     gap: 10px;

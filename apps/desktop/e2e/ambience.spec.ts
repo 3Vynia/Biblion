@@ -13,8 +13,11 @@ async function openAmbience(page: Page) {
   return page.locator('#ambience')
 }
 
+const tab = (page: Page, name: string) => page.locator('#ambience').getByRole('tab', { name }).click()
+
 test('a scene starts playing and shows up in the sidebar', async ({ page }) => {
   const panel = await openAmbience(page)
+  await tab(page, 'Sounds & scenes')
   await panel.getByRole('button', { name: 'Rainy library' }).click()
   await expect(panel.getByRole('switch', { name: 'Rain', exact: true })).toHaveAttribute('aria-checked', 'true')
 
@@ -30,6 +33,7 @@ test('modes, sliders and the sleep timer are saved', async ({ page }) => {
   const panel = await openAmbience(page)
   await panel.getByRole('radio', { name: 'Focus' }).click()
   await expect(panel.getByRole('radio', { name: 'Focus' })).toHaveAttribute('aria-checked', 'true')
+  await tab(page, 'Timer & options')
   await panel.getByRole('radio', { name: '30 min' }).click()
   await expect
     .poll(async () => {
@@ -38,12 +42,15 @@ test('modes, sliders and the sleep timer are saved', async ({ page }) => {
     })
     .toEqual([true, 'focus', 30])
 
+  await expect(panel.getByRole('tab', { name: /Timer & options/ })).toContainText('30m')
+  await tab(page, 'Soundscape')
   await panel.getByRole('button', { name: 'Turn the soundscape off' }).click()
   await expect(panel.getByRole('radio', { name: 'Focus' })).toHaveAttribute('aria-checked', 'false')
 })
 
 test('saving a mix and deleting it asks first', async ({ page }) => {
   const panel = await openAmbience(page)
+  await tab(page, 'Sounds & scenes')
   await panel.getByRole('switch', { name: 'Fireplace' }).click()
   await panel.getByRole('button', { name: 'Save mix' }).click()
   await page.getByLabel('Scene name').fill('My corner')
@@ -73,6 +80,7 @@ test('the reader has its own ambience panel', async ({ page }) => {
 
 test('your own music folder plays with the ambience', async ({ page }) => {
   const panel = await openAmbience(page)
+  await tab(page, 'Your music')
   await page.evaluate(() => ((window as unknown as { __nextPath?: string }).__nextPath = '/home/me/Music'))
   await panel.getByRole('button', { name: /Choose a music folder/ }).click()
   const music = panel.getByRole('switch', { name: 'Play my music' })
@@ -96,4 +104,20 @@ test('your own music folder plays with the ambience', async ({ page }) => {
   await panel.getByRole('button', { name: 'Stop using it' }).click()
   await page.getByRole('alertdialog').getByRole('button', { name: 'Stop using it' }).click()
   await expect(panel.getByRole('button', { name: /Choose a music folder/ })).toBeVisible()
+})
+
+test('the settings ambience is split into tabs, and arrow keys move between them', async ({ page }) => {
+  const panel = await openAmbience(page)
+  await expect(panel.getByRole('tab', { name: 'Soundscape' })).toHaveAttribute('aria-selected', 'true')
+  await expect(panel.getByRole('radio', { name: 'Focus' })).toBeVisible()
+  await expect(panel.getByRole('switch', { name: 'Fireplace' })).toHaveCount(0)
+  // The "now playing" header stays above every tab.
+  await panel.getByRole('tab', { name: 'Soundscape' }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(panel.getByRole('tab', { name: 'Sounds & scenes' })).toBeFocused()
+  await expect(panel.getByRole('switch', { name: 'Fireplace' })).toBeVisible()
+  await expect(panel.getByRole('button', { name: 'Play ambience' })).toBeVisible()
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowLeft')
+  await expect(panel.getByRole('tab', { name: 'Timer & options' })).toHaveAttribute('aria-selected', 'true')
 })
