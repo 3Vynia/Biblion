@@ -453,6 +453,43 @@ pub async fn update_metadata(state: State<'_, AppState>, id: BookId, metadata: M
     blocking(move || lib.update_metadata(id, metadata)).await
 }
 
+const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "gif", "bmp"];
+const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Reads an image file the user picked, refusing anything that is not one.
+fn read_image_file(path: &std::path::Path) -> CmdResult<Vec<u8>> {
+    let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
+    if !IMAGE_EXTENSIONS.contains(&ext.as_str()) {
+        return Err(CmdError::new("invalid_argument", "Choose a JPEG, PNG, WebP, GIF or BMP image"));
+    }
+    let meta = std::fs::metadata(path).map_err(|e| CmdError::new("io", format!("Cannot open {}: {e}", path.display())))?;
+    if meta.len() > MAX_IMAGE_BYTES {
+        return Err(CmdError::new("invalid_argument", "This image is too large (over 32 MB)"));
+    }
+    std::fs::read(path).map_err(|e| CmdError::new("io", format!("Cannot read {}: {e}", path.display())))
+}
+
+/// An image file's bytes, to preview it before it becomes a cover.
+#[tauri::command]
+pub async fn read_image(path: PathBuf) -> CmdResult<tauri::ipc::Response> {
+    let bytes = tauri::async_runtime::spawn_blocking(move || read_image_file(&path))
+        .await
+        .map_err(|e| CmdError::new("internal", format!("background task failed: {e}")))??;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Makes an image file the book's cover (kept by rescans and backups).
+#[tauri::command]
+pub async fn cover_from_file(state: State<'_, AppState>, id: BookId, path: PathBuf) -> CmdResult<String> {
+    let lib = state.lib.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = read_image_file(&path)?;
+        lib.replace_cover(id, &bytes).map_err(CmdError::from)
+    })
+    .await
+    .map_err(|e| CmdError::new("internal", format!("background task failed: {e}")))?
+}
+
 // ── Open Library ─────────────────────────────────────────────────────────
 
 impl From<OlError> for CmdError {
