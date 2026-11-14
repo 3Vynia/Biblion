@@ -35,6 +35,8 @@ lzma-rs = "0.3"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+# Debug symbols are of no use in a released app, and double its size.
+strip = true
 
 [profile.dev.package."*"]
 opt-level = 2
