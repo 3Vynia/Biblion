@@ -150,6 +150,8 @@ fn main() {
             commands::list_annotations,
             commands::annotation_counts,
             commands::update_metadata,
+            commands::read_image,
+            commands::cover_from_file,
             commands::get_online_metadata,
             commands::set_online_metadata,
             commands::ol_search,
