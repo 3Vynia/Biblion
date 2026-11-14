@@ -24,7 +24,7 @@ use tauri::State;
 use crate::settings::Settings;
 use crate::backup::{self, AutoBackup, BackupSummary};
 use crate::music::{self, MusicLibrary};
-use crate::openlibrary::{self, Candidate, OlError, WorkDetails};
+use crate::online::{Details, NetError, SourceResults, Sources};
 use crate::watcher::FolderWatcher;
 
 /// Upper bound for one listing page (the grid asks for 200).
@@ -39,7 +39,7 @@ pub struct AppState {
     pub watcher: FolderWatcher,
     /// Tracks of the music folder's last listing (served by `music://`).
     pub music: Mutex<Vec<PathBuf>>,
-    pub openlibrary: Arc<openlibrary::Client>,
+    pub online: Arc<Sources>,
 }
 
 /// Error sent to the UI: a stable `code` to branch on plus a readable message.
@@ -492,13 +492,13 @@ pub async fn cover_from_file(state: State<'_, AppState>, id: BookId, path: PathB
 
 // ── Open Library ─────────────────────────────────────────────────────────
 
-impl From<OlError> for CmdError {
-    fn from(e: OlError) -> Self {
-        let code = match e {
-            OlError::Offline(_) => "offline",
-            OlError::Http(404) => "not_found",
-            OlError::Http(_) => "online_error",
-            OlError::Invalid(_) => "invalid_argument",
+impl From<NetError> for CmdError {
+    fn from(e: NetError) -> Self {
+        let code = match &e {
+            NetError::Offline(..) => "offline",
+            e if e.not_found() => "not_found",
+            NetError::Http(..) => "online_error",
+            NetError::Invalid(..) => "invalid_argument",
         };
         Self::new(code, e.to_string())
     }
@@ -522,40 +522,41 @@ pub fn set_online_metadata(state: State<'_, AppState>, on: bool) -> CmdResult<()
 async fn online<T, F>(state: &AppState, f: F) -> CmdResult<T>
 where
     T: Send + 'static,
-    F: FnOnce(&openlibrary::Client) -> Result<T, CmdError> + Send + 'static,
+    F: FnOnce(&Sources) -> Result<T, CmdError> + Send + 'static,
 {
     if !state.settings.lock().unwrap().online_metadata.unwrap_or(false) {
         return Err(CmdError::new("disabled", "Looking up books online is turned off in Settings"));
     }
-    let client = state.openlibrary.clone();
-    tauri::async_runtime::spawn_blocking(move || f(&client))
+    let sources = state.online.clone();
+    tauri::async_runtime::spawn_blocking(move || f(&sources))
         .await
         .map_err(|e| CmdError::new("internal", format!("background task failed: {e}")))?
 }
 
+/// Searches every source at once (Open Library, AniList).
 #[tauri::command]
-pub async fn ol_search(state: State<'_, AppState>, title: String, author: String, isbn: String) -> CmdResult<Vec<Candidate>> {
-    online(&state, move |c| Ok(c.search(&title, &author, &isbn)?)).await
+pub async fn md_search(state: State<'_, AppState>, title: String, author: String, isbn: String) -> CmdResult<Vec<SourceResults>> {
+    online(&state, move |s| Ok(s.search(&title, &author, &isbn))).await
 }
 
 #[tauri::command]
-pub async fn ol_work(state: State<'_, AppState>, key: String) -> CmdResult<WorkDetails> {
-    online(&state, move |c| Ok(c.work(&key)?)).await
+pub async fn md_details(state: State<'_, AppState>, source: String, key: String) -> CmdResult<Details> {
+    online(&state, move |s| Ok(s.details(&source, &key)?)).await
 }
 
 /// A cover preview, sent as raw bytes.
 #[tauri::command]
-pub async fn ol_cover(state: State<'_, AppState>, cover_id: i64) -> CmdResult<tauri::ipc::Response> {
-    let bytes = online(&state, move |c| Ok(c.cover(cover_id, false)?)).await?;
+pub async fn md_cover(state: State<'_, AppState>, token: String) -> CmdResult<tauri::ipc::Response> {
+    let bytes = online(&state, move |s| Ok(s.cover(&token, false)?)).await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
 /// Downloads the large cover and makes it the book's cover.
 #[tauri::command]
-pub async fn ol_apply_cover(state: State<'_, AppState>, id: BookId, cover_id: i64) -> CmdResult<String> {
+pub async fn md_apply_cover(state: State<'_, AppState>, id: BookId, token: String) -> CmdResult<String> {
     let lib = state.lib.clone();
-    online(&state, move |c| {
-        let bytes = c.cover(cover_id, true)?;
+    online(&state, move |s| {
+        let bytes = s.cover(&token, true)?;
         Ok(lib.replace_cover(id, &bytes)?)
     })
     .await

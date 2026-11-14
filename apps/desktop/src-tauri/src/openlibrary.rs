@@ -1,122 +1,31 @@
-//! Book details from Open Library (openlibrary.org), used only when the user
-//! turns it on and asks for one book. Network code is kept thin; parsing and
-//! cleaning are plain functions so they are tested without the network.
+//! Open Library (openlibrary.org): books. See `online` for how sources are
+//! used. Parsing and cleaning are plain functions, tested without the network.
 
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::online::{strings, text, Candidate, Details, Http, NetError, MAX_COVER_BYTES};
 
 const API: &str = "https://openlibrary.org";
 const COVERS: &str = "https://covers.openlibrary.org";
-/// Open Library asks clients to identify themselves.
-const USER_AGENT: &str = "Biblion/0.1 (local library manager)";
-/// Gentle on a free service: at most a few requests a second.
-const MIN_GAP: Duration = Duration::from_millis(350);
-const MAX_COVER_BYTES: u64 = 8 * 1024 * 1024;
-const MAX_JSON_BYTES: u64 = 4 * 1024 * 1024;
-
-/// One book found by a search.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Candidate {
-    /// Work key, e.g. "/works/OL45804W".
-    pub key: String,
-    pub title: String,
-    pub subtitle: Option<String>,
-    pub authors: Vec<String>,
-    pub year: Option<i32>,
-    pub publishers: Vec<String>,
-    pub isbn: Option<String>,
-    pub cover_id: Option<i64>,
-    /// ISO 639-1 codes when known ("en"), else Open Library's own ("tlh").
-    pub languages: Vec<String>,
-    pub pages: Option<u32>,
-    pub editions: u32,
-    pub subjects: Vec<String>,
-}
-
-/// What only the work page has: the long description and its subjects.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct WorkDetails {
-    pub description: Option<String>,
-    pub subjects: Vec<String>,
-}
-
-#[derive(Debug)]
-pub enum OlError {
-    Offline(String),
-    Http(u16),
-    Invalid(String),
-}
-
-impl std::fmt::Display for OlError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OlError::Offline(e) => write!(f, "Could not reach Open Library: {e}"),
-            OlError::Http(404) => write!(f, "Open Library has nothing for this book"),
-            OlError::Http(429) => write!(f, "Open Library asks to slow down. Try again in a minute."),
-            OlError::Http(code) => write!(f, "Open Library answered with an error ({code})"),
-            OlError::Invalid(e) => write!(f, "Open Library sent something unexpected: {e}"),
-        }
-    }
-}
+const NAME: &str = "Open Library";
 
 pub struct Client {
-    agent: ureq::Agent,
-    last: Mutex<Option<Instant>>,
-}
-
-impl Default for Client {
-    fn default() -> Self {
-        Self::new()
-    }
+    http: Http,
 }
 
 impl Client {
     pub fn new() -> Self {
-        let agent = ureq::Agent::config_builder()
-            .user_agent(USER_AGENT)
-            .timeout_global(Some(Duration::from_secs(20)))
-            .build()
-            .into();
-        Self { agent, last: Mutex::new(None) }
-    }
-
-    fn pace(&self) {
-        let mut last = self.last.lock().unwrap();
-        if let Some(t) = *last {
-            let since = t.elapsed();
-            if since < MIN_GAP {
-                std::thread::sleep(MIN_GAP - since);
-            }
-        }
-        *last = Some(Instant::now());
-    }
-
-    fn get(&self, url: &str, query: &[(&str, &str)], limit: u64) -> Result<Vec<u8>, OlError> {
-        self.pace();
-        let mut req = self.agent.get(url);
-        for (k, v) in query {
-            req = req.query(*k, *v);
-        }
-        let mut res = req.call().map_err(|e| match e {
-            ureq::Error::StatusCode(code) => OlError::Http(code),
-            e => OlError::Offline(e.to_string()),
-        })?;
-        res.body_mut().with_config().limit(limit).read_to_vec().map_err(|e| OlError::Offline(e.to_string()))
-    }
-
-    fn json(&self, url: &str, query: &[(&str, &str)]) -> Result<Value, OlError> {
-        let bytes = self.get(url, query, MAX_JSON_BYTES)?;
-        serde_json::from_slice(&bytes).map_err(|e| OlError::Invalid(e.to_string()))
+        // Gentle on a free service: at most a few requests a second.
+        Self { http: Http::new(NAME, Duration::from_millis(350)) }
     }
 
     /// Searches by ISBN first (exact), then by title and author.
-    pub fn search(&self, title: &str, author: &str, isbn: &str) -> Result<Vec<Candidate>, OlError> {
+    pub fn search(&self, title: &str, author: &str, isbn: &str) -> Result<Vec<Candidate>, NetError> {
         let isbn: String = isbn.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
         if isbn.len() == 10 || isbn.len() == 13 {
-            let found = parse_search(&self.json(&format!("{API}/search.json"), &[("isbn", &isbn), ("fields", FIELDS), ("limit", "5")])?);
+            let found = parse_search(&self.http.get_json(&format!("{API}/search.json"), &[("isbn", &isbn), ("fields", FIELDS), ("limit", "5")])?);
             if !found.is_empty() {
                 return Ok(found);
             }
@@ -125,33 +34,33 @@ impl Client {
         if title.is_empty() && author.is_empty() {
             return Ok(Vec::new());
         }
-        let mut query = vec![("fields", FIELDS), ("limit", "12")];
+        let mut query = vec![("fields", FIELDS), ("limit", "10")];
         if !title.is_empty() {
             query.push(("title", title));
         }
         if !author.is_empty() {
             query.push(("author", author));
         }
-        Ok(parse_search(&self.json(&format!("{API}/search.json"), &query)?))
+        Ok(parse_search(&self.http.get_json(&format!("{API}/search.json"), &query)?))
     }
 
-    pub fn work(&self, key: &str) -> Result<WorkDetails, OlError> {
+    pub fn work(&self, key: &str) -> Result<Details, NetError> {
         if !valid_work_key(key) {
-            return Err(OlError::Invalid(format!("not a work key: {key}")));
+            return Err(NetError::Invalid(NAME, format!("not a work key: {key}")));
         }
-        Ok(parse_work(&self.json(&format!("{API}{key}.json"), &[])?))
+        Ok(parse_work(&self.http.get_json(&format!("{API}{key}.json"), &[])?))
     }
 
-    /// A cover image; `large` for the one to keep, small ones for previews.
-    pub fn cover(&self, id: i64, large: bool) -> Result<Vec<u8>, OlError> {
+    /// A cover image; `large` for the one to keep, smaller ones for previews.
+    pub fn cover(&self, id: i64, large: bool) -> Result<Vec<u8>, NetError> {
         if id <= 0 {
-            return Err(OlError::Invalid(format!("not a cover id: {id}")));
+            return Err(NetError::Invalid(NAME, format!("not a cover id: {id}")));
         }
         let size = if large { "L" } else { "M" };
         // `default=false` answers 404 instead of a blank placeholder image.
-        let bytes = self.get(&format!("{COVERS}/b/id/{id}-{size}.jpg"), &[("default", "false")], MAX_COVER_BYTES)?;
+        let bytes = self.http.get(&format!("{COVERS}/b/id/{id}-{size}.jpg"), &[("default", "false")], MAX_COVER_BYTES)?;
         if bytes.len() < 1024 {
-            return Err(OlError::Http(404));
+            return Err(NetError::Http(NAME, 404));
         }
         Ok(bytes)
     }
@@ -166,16 +75,6 @@ pub fn valid_work_key(key: &str) -> bool {
         .is_some_and(|n| !n.is_empty() && n.len() < 12 && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
-fn strings(v: &Value, take: usize) -> Vec<String> {
-    v.as_array()
-        .map(|a| a.iter().filter_map(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).take(take).map(str::to_owned).collect())
-        .unwrap_or_default()
-}
-
-fn text(v: &Value) -> Option<String> {
-    v.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
-}
-
 pub fn parse_search(v: &Value) -> Vec<Candidate> {
     let Some(docs) = v["docs"].as_array() else { return Vec::new() };
     docs.iter()
@@ -187,27 +86,33 @@ pub fn parse_search(v: &Value) -> Vec<Candidate> {
             let mut languages: Vec<String> = strings(&d["language"], 6).iter().map(|l| iso639_1(l)).collect();
             languages.dedup();
             Some(Candidate {
+                source: "openlibrary".into(),
+                url: Some(format!("{API}{key}")),
                 key,
+                kind: None,
                 title,
                 subtitle: text(&d["subtitle"]),
+                alt_titles: Vec::new(),
                 authors: strings(&d["author_name"], 6),
                 year: d["first_publish_year"].as_i64().and_then(|y| i32::try_from(y).ok()),
                 publishers: strings(&d["publisher"], 3),
                 isbn,
-                cover_id: d["cover_i"].as_i64().filter(|&c| c > 0),
+                cover: d["cover_i"].as_i64().filter(|&c| c > 0).map(|c| format!("ol:{c}")),
                 languages,
                 pages: d["number_of_pages_median"].as_u64().and_then(|p| u32::try_from(p).ok()).filter(|&p| p > 0),
                 editions: d["edition_count"].as_u64().unwrap_or(0).min(u32::MAX as u64) as u32,
+                volumes: None,
                 subjects: clean_subjects(&strings(&d["subject"], 60)),
+                description: None,
             })
         })
         .collect()
 }
 
-pub fn parse_work(v: &Value) -> WorkDetails {
+pub fn parse_work(v: &Value) -> Details {
     // A description is either a string or {"type": "/type/text", "value": "…"}.
     let raw = text(&v["description"]).or_else(|| text(&v["description"]["value"]));
-    WorkDetails { description: raw.map(|d| clean_description(&d)).filter(|d| !d.is_empty()), subjects: clean_subjects(&strings(&v["subjects"], 60)) }
+    Details { description: raw.map(|d| clean_description(&d)).filter(|d| !d.is_empty()), subjects: clean_subjects(&strings(&v["subjects"], 60)) }
 }
 
 /// Library-catalogue subjects are noisy ("nyt:combined-print=2008-06-01",
@@ -242,7 +147,7 @@ const CATALOGUE_NOISE: &[&str] = &[
 
 /// Open Library descriptions are Markdown with reference links and, often, a
 /// "----------" block listing other editions. Returns plain paragraphs.
-pub fn clean_description(raw: &str) -> String {
+pub(crate) fn clean_description(raw: &str) -> String {
     let raw = raw.replace("\r\n", "\n");
     let body = raw.split("\n----------").next().unwrap_or("");
     let body = body.split("\n**Also contained in").next().unwrap_or("");
@@ -360,7 +265,7 @@ mod tests {
         assert_eq!(c.isbn.as_deref(), Some("9780618640157"));
         assert_eq!(c.languages, ["en", "es", "tlh"]);
         assert_eq!(c.subjects, ["Fiction", "Fantasy fiction", "Hobbits"]);
-        assert_eq!(c.cover_id, Some(9255566));
+        assert_eq!(c.cover.as_deref(), Some("ol:9255566"));
     }
 
     #[test]
@@ -382,7 +287,7 @@ mod tests {
         assert_eq!(w.subjects, ["Dragons", "Ring"]);
         assert_eq!(parse_work(&json!({ "description": "Plain [link](http://x.y) text" })).description.as_deref(), Some("Plain link text"));
         assert_eq!(parse_work(&json!({ "description": "  " })).description, None);
-        assert_eq!(parse_work(&json!(null)), WorkDetails::default());
+        assert_eq!(parse_work(&json!(null)), Details::default());
     }
 
     #[test]
@@ -404,7 +309,8 @@ mod tests {
         let work = c.work(&hobbit.key).unwrap();
         println!("{work:#?}");
         assert!(work.description.is_some());
-        let cover = c.cover(hobbit.cover_id.unwrap(), false).unwrap();
+        let id = hobbit.cover.as_deref().unwrap().strip_prefix("ol:").unwrap().parse().unwrap();
+        let cover = c.cover(id, false).unwrap();
         assert!(cover.starts_with(&[0xff, 0xd8]), "a JPEG");
         let by_isbn = c.search("", "", "978-0-261-10221-7").unwrap();
         println!("by isbn: {:?}", by_isbn.iter().map(|b| &b.title).collect::<Vec<_>>());
