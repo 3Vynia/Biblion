@@ -69,6 +69,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: k('G'), label: 'Go to page' },
       { keys: k('A'), label: 'Reading settings' },
       { keys: k('M'), label: 'Ambience panel' },
+      { keys: k('L'), label: 'Read aloud' },
       { keys: k('Ctrl++', 'Ctrl+-'), label: 'Bigger or smaller text (zoom in PDFs)' },
       { keys: k('Ctrl+0'), label: 'Reset text size (fit width in PDFs)' },
       { keys: k('H'), label: 'Hide or show the bars' },

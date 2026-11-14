@@ -157,6 +157,20 @@ let readerSettings: unknown = null
 let uiSettings: unknown = null
 let ambienceSettings: unknown = null
 let watchFolders = true
+// Reading aloud: the voice starts not downloaded; "speech" is a short tone.
+let ttsInstalled = false
+const TTS_VOICES = [
+  { id: 'ef_dora', name: 'Dora', lang: 'es' },
+  { id: 'em_alex', name: 'Alex', lang: 'es' },
+  { id: 'af_heart', name: 'Heart', lang: 'en-us' },
+  { id: 'bf_emma', name: 'Emma', lang: 'en-gb' },
+]
+function mockSpeech(text: string): ArrayBuffer {
+  const seconds = Math.min(0.6, 0.05 + text.length * 0.004)
+  const samples = new Float32Array(Math.round(24000 * seconds))
+  for (let i = 0; i < samples.length; i++) samples[i] = 0.05 * Math.sin((i / 24000) * 2 * Math.PI * 220)
+  return samples.buffer
+}
 let onlineMetadata = false
 const editedMetadata = new Map<number, Metadata>()
 const chosenCovers = new Map<number, string>()
@@ -487,6 +501,16 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
       if (cmd === 'md_cover') return mockCover([...(args.token as string)].reduce((n, ch) => n + ch.charCodeAt(0), 0))
       chosenCovers.set(args.id as number, `picked-${args.token}`)
       return `picked-${args.token}`
+    case 'tts_status':
+      return { installed: ttsInstalled, espeak: true, download_bytes: 353_746_785, sample_rate: 24000, voices: TTS_VOICES }
+    case 'tts_install':
+      return new Promise((resolve) => setTimeout(() => resolve((ttsInstalled = true) && null), 150))
+    case 'tts_speak':
+      if (!ttsInstalled) throw { code: 'tts', message: 'The voice is not downloaded yet' }
+      return mockSpeech(args.text as string)
+    case 'tts_remove':
+      ttsInstalled = false
+      return null
     case 'get_watch_folders':
       return watchFolders
     case 'set_watch_folders':
