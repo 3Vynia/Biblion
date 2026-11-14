@@ -56,6 +56,8 @@ export const api = {
   listBooks: (query: BookQuery) => invoke<Page<BookSummary>>('list_books', { query }),
   getBook: (id: BookId) => invoke<Book>('get_book', { id }),
   updateMetadata: (id: BookId, metadata: Metadata) => invoke<void>('update_metadata', { id, metadata }),
+  readImage: (path: string) => invoke<ArrayBuffer>('read_image', { path }),
+  coverFromFile: (id: BookId, path: string) => invoke<string>('cover_from_file', { id, path }),
 
   // Open Library (refused by the backend unless turned on).
   getOnlineMetadata: () => invoke<boolean>('get_online_metadata'),
