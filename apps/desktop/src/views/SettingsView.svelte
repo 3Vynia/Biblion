@@ -18,6 +18,7 @@
   import { formatBytes, formatCount, formatDate, formatDuration, plural } from '../lib/format'
   import { library } from '../lib/library.svelte'
   import { nav } from '../lib/nav.svelte'
+  import { onlineMetadata } from '../lib/onlineMetadata.svelte'
   import { rise } from '../lib/motion'
   import { scan } from '../lib/scan.svelte'
   import { ACCENTS, ui, type AccentId, type CoverSize, type ThemeMode } from '../lib/uiSettings.svelte'
@@ -57,7 +58,7 @@
       title: 'Your data',
       sections: [
         { id: 'backup', label: 'Backup', icon: 'save', keywords: 'restore export notes markdown automatic copy highlights progress' },
-        { id: 'privacy', label: 'Privacy & online', icon: 'globe', keywords: 'internet network wiktionary online offline' },
+        { id: 'privacy', label: 'Privacy & online', icon: 'globe', keywords: 'internet network wiktionary online offline open library metadata covers details' },
       ],
     },
     {
@@ -200,6 +201,7 @@
     api.listAutoBackups().then((v) => (autoBackups = v)).catch(() => {})
     api.dataDir().then((d) => (dataDir = d)).catch(() => {})
     api.listDictionaries().then((d) => (dictionaries = d)).catch(() => {})
+    onlineMetadata.load()
   })
 
   // Highlight the section being read in the side index: the last one whose
@@ -292,6 +294,13 @@
   const readerTheme = $derived(THEMES[r.theme])
   const onOff = (on: boolean) => (on ? 'on' : 'off')
 
+  function privacySummary(words: boolean, books: boolean) {
+    if (words && books) return 'Single words go to Wiktionary, book searches to Open Library'
+    if (words) return 'Only single words go online, to Wiktionary'
+    if (books) return 'Only the book searches you make go online, to Open Library'
+    return 'Nothing leaves this computer'
+  }
+
   // One line under each heading: what this section is set to right now.
   const summary = $derived<Record<string, string>>({
     appearance: [
@@ -312,7 +321,7 @@
     backup: autoBackup
       ? `Automatic backups on${autoBackups[0] ? ` · last ${formatDate(autoBackups[0].created_at)}` : ''}`
       : 'Automatic backups off',
-    privacy: ui.value.onlineDictionary ? 'Only single words go online, to Wiktionary' : 'Nothing leaves this computer',
+    privacy: privacySummary(ui.value.onlineDictionary, onlineMetadata.enabled),
     keyboard: 'Press ? anywhere to see them',
     about: 'Biblion 0.1.0',
   })
@@ -649,6 +658,12 @@
           description="When no offline dictionary knows a word, ask Wiktionary. Only the word is sent."
           checked={ui.value.onlineDictionary}
           onchange={(v) => ui.update({ onlineDictionary: v })}
+        />
+        <Switch
+          label="Find book details online"
+          description="From a book’s details, search Open Library for its cover, description and subjects. Only the title, author and ISBN you search for are sent, and nothing changes until you choose it."
+          checked={onlineMetadata.enabled}
+          onchange={(v) => onlineMetadata.set(v).catch(() => {})}
         />
       </div>
     </section>

@@ -305,3 +305,24 @@ export interface MusicLibrary {
   folder: string | null
   tracks: Track[]
 }
+
+/** A book found on Open Library (one work, all its editions). */
+export interface OlCandidate {
+  key: string
+  title: string
+  subtitle: string | null
+  authors: string[]
+  year: number | null
+  publishers: string[]
+  isbn: string | null
+  cover_id: number | null
+  languages: string[]
+  pages: number | null
+  editions: number
+  subjects: string[]
+}
+
+export interface OlWork {
+  description: string | null
+  subjects: string[]
+}
