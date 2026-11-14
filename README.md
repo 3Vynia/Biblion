@@ -6,8 +6,8 @@
 
 <p align="center">
   <b>Your library, on your computer.</b><br>
-  A fast, private reader and library manager for very large collections:<br>
-  EPUB, MOBI, AZW3, PDF and CBZ/CBR comics, from a hundred books to two hundred thousand.
+  A fast, private reader and library manager for your books and comics:<br>
+  EPUB, MOBI, AZW3, PDF and CBZ/CBR, all in one place.
 </p>
 
 <p align="center">
@@ -45,8 +45,9 @@ are reading or have finished, and search everything at once.
 
 ### Book details, when you ask
 
-Comics are named from their files ("Crossed - Badlands 012.cbr" is issue 12
-of *Crossed - Badlands*), and any book's details can be edited by hand. If you
+Comics are named from their files ("Superman 012.cbr" is issue 12 of
+*Superman*, "Magik v02.cbz" is volume 2 of *Magik*), and any book's details
+can be edited by hand. If you
 turn it on, Biblion also searches **Open Library** (books) and **AniList**
 (manga, manhwa and light novels) at once, and lets you choose, field by field,
 what to take: cover, description, subjects, dates.
@@ -97,19 +98,6 @@ are on the [releases page](https://github.com/3Vynia/Biblion/releases).
 
 On Linux, the ambience sounds use GStreamer (`gst-plugins-base` and
 `gst-plugins-good`, installed with the `.deb` and `.rpm` packages).
-
-## Performance
-
-Measured on 200,000 books (9.7 GB) with 4 CPU cores:
-
-| Operation | Time |
-|---|---|
-| First full scan (metadata and 146,000 covers) | 2 min 55 s (about 1,150 books/s) |
-| Rescan with no changes | 1.5 s |
-| A page of 100 books, any sort order | 3–5 ms |
-| A page at offset 100,000 | 8 ms |
-| Full-text search, by relevance | 4–17 ms |
-| Peak memory while scanning | 220 MB |
 
 ## Build from source
 
