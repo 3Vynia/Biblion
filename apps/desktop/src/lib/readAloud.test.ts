@@ -32,6 +32,7 @@ describe('reading aloud', () => {
       { id: 'ef_dora', name: 'Dora', lang: 'es' },
       { id: 'em_alex', name: 'Alex', lang: 'es' },
       { id: 'af_heart', name: 'Heart', lang: 'en-us' },
+      { id: 'af_bella', name: 'Bella', lang: 'en-us' },
       { id: 'bf_emma', name: 'Emma', lang: 'en-gb' },
     ]
     expect(voiceLang('es-ES')).toBe('es')
@@ -40,7 +41,7 @@ describe('reading aloud', () => {
     expect(voiceLang('fr')).toBeNull()
     expect(pickVoice(voices, 'es', {})).toBe('ef_dora+af_bella')
     expect(pickVoice(voices, 'es', { es: 'em_alex' })).toBe('em_alex')
-    expect(pickVoice(voices, 'en-us', { 'en-us': 'gone' })).toBe('af_heart')
+    expect(pickVoice(voices, 'en-us', { 'en-us': 'gone' })).toBe('af_bella')
     expect(pickVoice(voices, null, {})).toBe('ef_dora+af_bella')
   })
 })

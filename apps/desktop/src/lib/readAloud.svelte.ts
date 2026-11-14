@@ -65,7 +65,7 @@ export function voiceLang(lang: string | null | undefined): string | null {
   return null
 }
 
-const DEFAULT_VOICE: Record<string, string> = { es: 'ef_dora+af_bella', 'en-us': 'af_heart', 'en-gb': 'bf_emma' }
+const DEFAULT_VOICE: Record<string, string> = { es: 'ef_dora+af_bella', 'en-us': 'af_bella', 'en-gb': 'bf_emma' }
 
 /** The chosen voice for a language, or its default; Spanish when unknown. */
 export function pickVoice(voices: TtsVoice[], lang: string | null, chosen: Record<string, string>): string {
