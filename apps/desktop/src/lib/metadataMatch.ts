@@ -1,7 +1,8 @@
-// Which changes a book found on Open Library would make. Nothing is applied
-// without the user choosing it.
+// Books found online, from every source mixed into one list, and which
+// changes picking one would make. Nothing is applied without the user
+// choosing it.
 
-import type { Metadata, OlCandidate, OlWork } from './types'
+import type { MdCandidate, MdDetails, Metadata, SourceResults } from './types'
 
 export type FieldId = 'title' | 'subtitle' | 'authors' | 'published' | 'description' | 'tags'
 
@@ -30,7 +31,7 @@ const norm = (s: string) =>
 const yearOf = (published: string | null) => published?.match(/\d{4}/)?.[0] ?? ''
 
 /** What applying this Open Library book could change, field by field. */
-export function proposedChanges(m: Metadata, c: OlCandidate, work: OlWork | null): Change[] {
+export function proposedChanges(m: Metadata, c: MdCandidate, work: MdDetails | null): Change[] {
   const changes: Change[] = []
   const title = m.title ?? ''
   if (c.title && !same(title, c.title)) changes.push({ field: 'title', label: 'Title', current: title, next: c.title, suggested: !title })
@@ -47,12 +48,14 @@ export function proposedChanges(m: Metadata, c: OlCandidate, work: OlWork | null
   if (c.year && String(c.year) !== year)
     changes.push({ field: 'published', label: 'First published', current: m.published ?? '', next: String(c.year), suggested: !year })
 
-  const description = work?.description ?? ''
+  const description = c.description ?? work?.description ?? ''
   if (description && !same(m.description ?? '', description))
     changes.push({ field: 'description', label: 'Description', current: m.description ?? '', next: description, suggested: !m.description?.trim() })
 
   const have = new Set(m.tags.map(norm))
-  const added = [...(work?.subjects.length ? work.subjects : c.subjects)].filter((t) => !have.has(norm(t))).slice(0, 8)
+  // What it is ("Manhwa") is a subject too: it is how such books are browsed.
+  const offered = [...(c.kind ? [c.kind] : []), ...(work?.subjects.length ? work.subjects : c.subjects)]
+  const added = offered.filter((t, i) => !have.has(norm(t)) && offered.findIndex((o) => norm(o) === norm(t)) === i).slice(0, 8)
   if (added.length)
     changes.push({ field: 'tags', label: 'Subjects', current: m.tags.join(', '), next: [...m.tags, ...added].join(', '), added, suggested: m.tags.length === 0 })
 
@@ -72,4 +75,34 @@ export function applyChanges(m: Metadata, changes: Change[], chosen: Set<FieldId
     else if (ch.field === 'tags') out.tags = [...m.tags, ...(ch.added ?? [])]
   }
   return out
+}
+
+const words = (s: string) => new Set(norm(s).split(' ').filter((w) => w.length > 1))
+
+/** How alike two titles are, 0 to 1: shared words over all words. */
+export function titleLikeness(a: string, b: string): number {
+  const x = words(a)
+  const y = words(b)
+  if (!x.size || !y.size) return 0
+  let shared = 0
+  for (const w of x) if (y.has(w)) shared++
+  return shared / (x.size + y.size - shared)
+}
+
+/**
+ * Every source's matches in one list, best first: the closest title (in any
+ * of its names), then a shared author, then a cover. Ties keep each source's
+ * own order, so sources interleave instead of one burying the other.
+ */
+export function rankCandidates(results: SourceResults[], title: string, author: string): MdCandidate[] {
+  const authorWords = words(author)
+  const score = (c: MdCandidate, i: number) => {
+    const t = Math.max(titleLikeness(title, c.title), ...c.alt_titles.map((a) => titleLikeness(title, a)))
+    const byAuthor = authorWords.size > 0 && c.authors.some((a) => [...words(a)].some((w) => authorWords.has(w)))
+    return t * 10 + (byAuthor ? 3 : 0) + (c.cover ? 0.5 : 0) - i * 0.05
+  }
+  return results
+    .flatMap((r) => r.candidates.map((c, i) => ({ c, s: score(c, i) })))
+    .sort((a, b) => b.s - a.s)
+    .map((x) => x.c)
 }

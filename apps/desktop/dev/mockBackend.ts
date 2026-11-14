@@ -12,7 +12,8 @@ import type {
   HealthBook,
   Metadata,
   NewAnnotation,
-  OlCandidate,
+  MdCandidate,
+  SourceResults,
   Shelf,
 } from '../src/lib/types'
 
@@ -160,25 +161,39 @@ let onlineMetadata = false
 const editedMetadata = new Map<number, Metadata>()
 const chosenCovers = new Map<number, string>()
 
-// Open Library, made up: "zzz" finds nothing, "offline" fails like a lost connection.
-function olSearch(title: string, author: string): OlCandidate[] {
+// Online sources, made up: "zzz" finds nothing, "offline" fails like a lost
+// connection, and "manga" makes Open Library fail while AniList answers.
+function mdSearch(title: string, author: string): SourceResults[] {
   if (/offline/i.test(title)) throw { code: 'offline', message: 'Could not reach Open Library: no connection' }
-  if (/zzz/i.test(title)) return []
+  if (/zzz/i.test(title)) return [
+    { source: 'openlibrary', label: 'Open Library', candidates: [], error: null },
+    { source: 'anilist', label: 'AniList', candidates: [], error: null },
+  ]
   const base = title.trim() || 'Untitled'
-  return [0, 1, 2, 3, 4].map((i) => ({
+  const blank = { subtitle: null, alt_titles: [], publishers: ['Mock Press'], isbn: null, languages: ['en'], pages: null, editions: 0, volumes: null, description: null, url: null, kind: null }
+  const books: MdCandidate[] = [0, 1, 2, 3, 4].map((i) => ({
+    ...blank,
+    source: 'openlibrary',
     key: `/works/OL${100 + i}W`,
     title: i === 0 ? base : `${base} ${['(Illustrated)', 'Collected', 'Annotated', 'Revisited'][i - 1]}`,
     subtitle: i === 0 ? 'There and Back Again' : null,
     authors: [author.trim() || 'Anne Author'],
     year: 1937 + i * 11,
-    publishers: ['Mock Press'],
-    isbn: null,
-    cover_id: i === 3 ? null : 9000 + i,
-    languages: ['en'],
+    cover: i === 3 ? null : `ol:${9000 + i}`,
     pages: 300 + i,
     editions: i === 0 ? 482 : 3,
     subjects: ['Dragons', 'Adventure', 'Maps'],
   }))
+  const comics: MdCandidate[] = [
+    { ...blank, source: 'anilist', key: '105398', kind: 'Manhwa', title: `${base} Saga`, alt_titles: ['Na Honjaman'], authors: ['Chugong'], year: 2018, cover: 'https://s4.anilist.co/file/anilistcdn/a.jpg', volumes: 14, subjects: ['Action', 'Fantasy'], description: 'Hunters fight monsters in dungeons.', url: 'https://anilist.co/manga/105398' },
+    { ...blank, source: 'anilist', key: '2', kind: 'Light novel', title: `Another ${base}`, authors: ['Someone Else'], year: 2015, cover: null, subjects: ['Romance'] },
+  ]
+  return [
+    /manga/i.test(title)
+      ? { source: 'openlibrary', label: 'Open Library', candidates: [], error: 'Could not reach Open Library: timed out' }
+      : { source: 'openlibrary', label: 'Open Library', candidates: books, error: null },
+    { source: 'anilist', label: 'AniList', candidates: comics, error: null },
+  ]
 }
 
 /** A small coloured JPEG standing in for a downloaded cover. */
@@ -459,17 +474,19 @@ export function handle(cmd: string, args: Record<string, unknown>): unknown {
     case 'cover_from_file':
       chosenCovers.set(args.id as number, 'user-cover')
       return 'user-cover'
-    case 'ol_search':
-    case 'ol_work':
-    case 'ol_cover':
-    case 'ol_apply_cover':
+    case 'md_search':
+    case 'md_details':
+    case 'md_cover':
+    case 'md_apply_cover':
       if (!onlineMetadata) throw { code: 'disabled', message: 'Looking up books online is turned off in Settings' }
-      if (cmd === 'ol_search') return olSearch(args.title as string, args.author as string)
-      if (cmd === 'ol_work')
-        return { description: 'A long journey there and back again, told for the first time in full.', subjects: ['Dragons', 'Dwarves', 'Treasure'] }
-      if (cmd === 'ol_cover') return mockCover(args.coverId as number)
-      chosenCovers.set(args.id as number, `ol-${args.coverId}`)
-      return `ol-${args.coverId}`
+      if (cmd === 'md_search') return mdSearch(args.title as string, args.author as string)
+      if (cmd === 'md_details')
+        return args.source === 'openlibrary'
+          ? { description: 'A long journey there and back again, told for the first time in full.', subjects: ['Dragons', 'Dwarves', 'Treasure'] }
+          : { description: null, subjects: [] }
+      if (cmd === 'md_cover') return mockCover([...(args.token as string)].reduce((n, ch) => n + ch.charCodeAt(0), 0))
+      chosenCovers.set(args.id as number, `picked-${args.token}`)
+      return `picked-${args.token}`
     case 'get_watch_folders':
       return watchFolders
     case 'set_watch_folders':

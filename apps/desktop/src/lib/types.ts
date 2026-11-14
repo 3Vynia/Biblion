@@ -308,23 +308,39 @@ export interface MusicLibrary {
   tracks: Track[]
 }
 
-/** A book found on Open Library (one work, all its editions). */
-export interface OlCandidate {
+/** A book found online, by any source (Open Library, AniList…). */
+export interface MdCandidate {
+  source: 'openlibrary' | 'anilist' | string
   key: string
+  /** "Manga", "Manhwa", "Light novel"… when the source says. */
+  kind: string | null
   title: string
   subtitle: string | null
+  alt_titles: string[]
   authors: string[]
   year: number | null
   publishers: string[]
   isbn: string | null
-  cover_id: number | null
+  /** Token for `api.mdCover`. */
+  cover: string | null
   languages: string[]
   pages: number | null
   editions: number
+  volumes: number | null
+  subjects: string[]
+  description: string | null
+  url: string | null
+}
+
+export interface MdDetails {
+  description: string | null
   subjects: string[]
 }
 
-export interface OlWork {
-  description: string | null
-  subjects: string[]
+/** One source's answer to a search. */
+export interface SourceResults {
+  source: string
+  label: string
+  candidates: MdCandidate[]
+  error: string | null
 }
