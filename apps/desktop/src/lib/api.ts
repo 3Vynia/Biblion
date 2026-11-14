@@ -35,6 +35,9 @@ import type {
   TrashReport,
   Shelf,
   TagEntry,
+  Metadata,
+  OlCandidate,
+  OlWork,
 } from './types'
 
 export const api = {
@@ -52,6 +55,15 @@ export const api = {
 
   listBooks: (query: BookQuery) => invoke<Page<BookSummary>>('list_books', { query }),
   getBook: (id: BookId) => invoke<Book>('get_book', { id }),
+  updateMetadata: (id: BookId, metadata: Metadata) => invoke<void>('update_metadata', { id, metadata }),
+
+  // Open Library (refused by the backend unless turned on).
+  getOnlineMetadata: () => invoke<boolean>('get_online_metadata'),
+  setOnlineMetadata: (on: boolean) => invoke<void>('set_online_metadata', { on }),
+  olSearch: (title: string, author: string, isbn: string) => invoke<OlCandidate[]>('ol_search', { title, author, isbn }),
+  olWork: (key: string) => invoke<OlWork>('ol_work', { key }),
+  olCover: (coverId: number) => invoke<ArrayBuffer>('ol_cover', { coverId }),
+  olApplyCover: (id: BookId, coverId: number) => invoke<string>('ol_apply_cover', { id, coverId }),
   stats: () => invoke<LibraryStats>('stats'),
   listAuthors: (prefix: string | null, offset: number, limit: number) =>
     invoke<Page<AuthorEntry>>('list_authors', { prefix, offset, limit }),
