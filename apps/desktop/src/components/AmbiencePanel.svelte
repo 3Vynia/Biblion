@@ -340,6 +340,7 @@
     --a-card: var(--r-bg, var(--surface));
     --a-hover: var(--r-hover, var(--surface-2));
     color: var(--a-fg);
+    container-type: inline-size;
   }
 
   .hero {
@@ -425,7 +426,8 @@
   }
 
   .tabs {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 4px;
     margin: 18px 0 4px;
     padding: 4px;
@@ -434,7 +436,7 @@
   }
 
   .tabs button {
-    flex: 1;
+    min-width: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -451,6 +453,11 @@
       color 180ms ease;
   }
 
+  .tabs button:focus-visible {
+    outline: 2px solid var(--a-accent);
+    outline-offset: -2px;
+  }
+
   .tabs button:hover:not(:disabled) {
     background: transparent;
     color: var(--a-fg);
@@ -462,6 +469,13 @@
     color: var(--a-accent);
     font-weight: 600;
     box-shadow: 0 1px 4px rgb(0 0 0 / 0.18);
+  }
+
+  /* Two rows of two when four do not fit. */
+  @container (max-width: 560px) {
+    .tabs {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
 
   .live {

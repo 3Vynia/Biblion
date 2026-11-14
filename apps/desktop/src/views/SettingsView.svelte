@@ -689,7 +689,7 @@
 <style>
   .settings {
     display: grid;
-    grid-template-columns: 236px 1fr;
+    grid-template-columns: clamp(200px, 24%, 236px) minmax(0, 1fr);
     height: 100%;
   }
 
@@ -790,6 +790,8 @@
 
   .scroller {
     position: relative;
+    min-width: 0;
+    overflow-x: hidden;
     overflow-y: auto;
     padding: 22px 36px 80px 12px;
     scroll-behavior: smooth;
@@ -961,6 +963,7 @@
 
   .accents {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
   }
 
@@ -1060,7 +1063,7 @@
   /* Backup: the three things you come here to do. */
   .actions {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     gap: 12px;
     margin-top: 12px;
   }
@@ -1219,7 +1222,7 @@
 
   .facts {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
     gap: 12px;
     margin-top: 12px;
   }
