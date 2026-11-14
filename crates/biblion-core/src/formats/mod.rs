@@ -34,7 +34,11 @@ pub fn extract(path: &Path, format: Format) -> Result<Extracted> {
         Format::Mobi | Format::Azw3 => mobi::extract(path)?,
         Format::Pdf => pdf::extract(path)?,
     };
-    util::fill_from_path(&mut out.metadata, path);
+    if format.is_comic() {
+        util::fill_comic_from_path(&mut out.metadata, path);
+    } else {
+        util::fill_from_path(&mut out.metadata, path);
+    }
     util::normalize_metadata(&mut out.metadata);
     Ok(out)
 }
@@ -42,7 +46,11 @@ pub fn extract(path: &Path, format: Format) -> Result<Extracted> {
 /// Minimal metadata when the file cannot be read.
 pub fn fallback(path: &Path) -> Extracted {
     let mut out = Extracted::default();
-    util::fill_from_path(&mut out.metadata, path);
+    if Format::from_path(path).is_some_and(Format::is_comic) {
+        util::fill_comic_from_path(&mut out.metadata, path);
+    } else {
+        util::fill_from_path(&mut out.metadata, path);
+    }
     util::normalize_metadata(&mut out.metadata);
     out
 }

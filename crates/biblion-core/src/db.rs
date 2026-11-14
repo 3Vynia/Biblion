@@ -178,7 +178,47 @@ UPDATE progress SET finished_at = updated_at WHERE finished = 1;
 CREATE INDEX progress_finished ON progress(finished_at) WHERE finished = 1;
 "#;
 
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6];
+/// v7: no schema change; comics get series, number and authors from their
+/// file and folder names (see `name_comics`).
+const SCHEMA_V7: &str = "";
+
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7];
+
+/// Comics already in the library were named like books ("Crossed - Badlands
+/// 001" gave the author "Crossed"). Reads their names again as comics. Only
+/// what came from the name changes: ComicInfo.xml details and edits stay.
+fn name_comics(tx: &Transaction) -> Result<usize> {
+    use crate::formats::util::{fill_comic_from_path, fill_from_path};
+    let ids: Vec<BookId> = {
+        let mut stmt = tx.prepare("SELECT id FROM books WHERE format IN ('cbz', 'cbr') AND series IS NULL AND user_edited = 0")?;
+        let ids = stmt.query_map([], |r| r.get(0))?.collect::<std::result::Result<_, _>>()?;
+        ids
+    };
+    let mut changed = 0;
+    for id in ids {
+        let book = get_book(tx, id)?;
+        let path = std::path::Path::new(&book.path);
+        let mut as_book = Metadata::default();
+        fill_from_path(&mut as_book, path);
+        let mut m = book.metadata.clone();
+        if m.title == as_book.title {
+            m.title = None;
+        }
+        if m.authors == as_book.authors {
+            m.authors.clear();
+        }
+        fill_comic_from_path(&mut m, path);
+        if m.series.is_none() && m.title == book.metadata.title && m.authors == book.metadata.authors {
+            continue;
+        }
+        crate::formats::util::normalize_metadata(&mut m);
+        write_metadata(tx, id, &m)?;
+        // Not an edit by the user: later scans may still update it.
+        tx.execute("UPDATE books SET user_edited = 0, updated_at = ?2 WHERE id = ?1", params![id, book.updated_at])?;
+        changed += 1;
+    }
+    Ok(changed)
+}
 
 /// Gives authorless books the author named by their folder or file name.
 /// Books edited by hand are left alone; a book whose file could not be
@@ -275,6 +315,10 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
         if i + 1 == 5 {
             let n = infer_missing_authors(&tx)?;
             tracing::info!("authors taken from file paths: {n}");
+        }
+        if i + 1 == 7 {
+            let n = name_comics(&tx)?;
+            tracing::info!("comics named from their files: {n}");
         }
         tx.pragma_update(None, "user_version", (i + 1) as i64)?;
         tx.commit()?;
