@@ -75,8 +75,13 @@ generative reading ambience (soundscapes, rain, fire, sea, your own music,
 sleep timer),
 folder watching, a library health screen (duplicates, unreadable and
 missing files), reading statistics (time, streaks, yearly goal), backups
-(manual and daily automatic, restorable on another computer) and keyboard
-shortcuts for everything (press `?`).
+(manual and daily automatic, restorable on another computer), keyboard
+shortcuts for everything (press `?`) and, if you turn it on, covers,
+descriptions and subjects from Open Library, picked field by field.
+
+Biblion works offline. Only two things can reach the internet, both off
+unless you allow them in Settings, under Privacy & online: looking up a word on
+Wiktionary, and searching Open Library for a book you choose.
 
 ## License
 
