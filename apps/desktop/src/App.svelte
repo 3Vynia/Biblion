@@ -174,7 +174,8 @@
       nav.jump(SECTION_KEYS[e.key]())
     } else if (e.key === '/' && plain(e) && !inField) {
       e.preventDefault()
-      document.getElementById('search')?.focus()
+      // In Settings, "/" searches the settings instead of the library.
+      ;(document.getElementById('settings-search') ?? document.getElementById('search'))?.focus()
     } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
       e.preventDefault()
       ui.update({ sidebarCollapsed: !ui.value.sidebarCollapsed })
