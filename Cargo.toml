@@ -43,3 +43,6 @@ opt-level = 2
 # development builds too, or scanning a large library in `tauri dev` crawls.
 [profile.dev.package.biblion-core]
 opt-level = 2
+# One codegen unit: with several, incremental rebuilds of the optimised core
+# sometimes fail to link ("undefined hidden symbol … .llvm.…" from rust-lld).
+codegen-units = 1
