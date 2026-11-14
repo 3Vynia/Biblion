@@ -4,9 +4,13 @@
   import BookDetail from './components/BookDetail.svelte'
   import ScanPanel from './components/ScanPanel.svelte'
   import Icon from './components/Icon.svelte'
-  import EpubReader from './reader/EpubReader.svelte'
-  import ComicReader from './reader/ComicReader.svelte'
-  import PdfReader from './reader/PdfReader.svelte'
+  // The readers (and pdf.js) load when a book opens, not at startup.
+  const loadReader = (format: Format) =>
+    isComic(format)
+      ? import('./reader/ComicReader.svelte')
+      : format === 'pdf'
+        ? import('./reader/PdfReader.svelte')
+        : import('./reader/EpubReader.svelte')
   import HomeView from './views/HomeView.svelte'
   import BooksView from './views/BooksView.svelte'
   import AuthorsView from './views/AuthorsView.svelte'
@@ -27,7 +31,7 @@
   import { rise } from './lib/motion'
   import { allBooks, favorites, nav, readingNow, routeKey, type Route } from './lib/nav.svelte'
   import { scan } from './lib/scan.svelte'
-  import type { Book, BookSummary } from './lib/types'
+  import type { Book, BookSummary, Format } from './lib/types'
   import { ui } from './lib/uiSettings.svelte'
   import { dialog } from './lib/dialog.svelte'
   import { pdfCovers } from './lib/pdfCovers.svelte'
@@ -317,13 +321,9 @@
 {/if}
 
 {#if reading}
-  {#if isComic(reading.format)}
-    <ComicReader book={reading} startAt={readingAt} onclose={closeReader} />
-  {:else if reading.format === 'pdf'}
-    <PdfReader book={reading} startAt={readingAt} onclose={closeReader} />
-  {:else}
-    <EpubReader book={reading} startAt={readingAt} onclose={closeReader} />
-  {/if}
+  {#await loadReader(reading.format) then { default: Reader }}
+    <Reader book={reading} startAt={readingAt} onclose={closeReader} />
+  {/await}
 {/if}
 
 <ConfirmDialog />
