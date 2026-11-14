@@ -1,6 +1,7 @@
 //! Backup and restore of what the reader adds to a library: reading
 //! progress, highlights, notes and bookmarks, collections, favourites and
-//! ratings, and the reading log.
+//! ratings, the reading log, and details the user edited (with the covers
+//! they chose).
 //!
 //! Books are referred to by fingerprint, path, and title + first author, so
 //! a backup can be restored into a library on another computer, or after
@@ -13,7 +14,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
 use crate::db::split_list;
-use crate::{BookId, Result};
+use crate::{BookId, Metadata, Result};
 
 pub const FORMAT_VERSION: u32 = 1;
 
@@ -68,6 +69,17 @@ pub struct LogEntry {
     pub pages: i64,
 }
 
+/// Details the user edited by hand or picked online.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditEntry {
+    pub book: usize,
+    pub metadata: Metadata,
+    pub updated_at: i64,
+    /// A cover the user chose: its thumbnail, JPEG in base64.
+    #[serde(default)]
+    pub cover: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarkEntry {
     pub book: usize,
@@ -86,6 +98,9 @@ pub struct LibraryBackup {
     pub shelves: Vec<ShelfEntry>,
     pub marks: Vec<MarkEntry>,
     pub reading_log: Vec<LogEntry>,
+    /// Absent in backups made before edits were kept.
+    #[serde(default)]
+    pub edits: Vec<EditEntry>,
 }
 
 /// What a restore did (or, for a preview, would do).
@@ -100,11 +115,15 @@ pub struct RestoreReport {
     pub shelf_books: usize,
     pub marks: usize,
     pub reading_days: usize,
+    #[serde(default)]
+    pub edits: usize,
     /// A few titles that could not be found, to show the user.
     pub missing_samples: Vec<String>,
 }
 
-pub fn export(c: &Connection) -> Result<LibraryBackup> {
+/// The backup, and the library ids of its `edits` (in the same order), so
+/// the caller can add the covers the user chose.
+pub fn export(c: &Connection) -> Result<(LibraryBackup, Vec<BookId>)> {
     let mut out = LibraryBackup { version: FORMAT_VERSION, ..Default::default() };
     // Only books something refers to.
     let mut index: HashMap<BookId, usize> = HashMap::new();
@@ -114,7 +133,7 @@ pub fn export(c: &Connection) -> Result<LibraryBackup> {
         OR EXISTS (SELECT 1 FROM bookmarks k WHERE k.book_id = b.id)
         OR EXISTS (SELECT 1 FROM shelf_books s WHERE s.book_id = b.id)
         OR EXISTS (SELECT 1 FROM reading_log l WHERE l.book_id = b.id)
-        OR b.favorite = 1 OR b.rating IS NOT NULL
+        OR b.favorite = 1 OR b.rating IS NOT NULL OR b.user_edited = 1
         ORDER BY id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -199,7 +218,18 @@ pub fn export(c: &Connection) -> Result<LibraryBackup> {
             out.reading_log.push(LogEntry { book, day, seconds, pages });
         }
     }
-    Ok(out)
+
+    let mut edited = Vec::new();
+    let mut stmt = c.prepare("SELECT id, updated_at FROM books WHERE user_edited = 1 ORDER BY id")?;
+    for r in stmt.query_map([], |r| Ok((r.get::<_, BookId>(0)?, r.get::<_, i64>(1)?)))? {
+        let (id, updated_at) = r?;
+        if let Some(book) = at(id) {
+            let metadata = crate::db::get_book(c, id)?.metadata;
+            out.edits.push(EditEntry { book, metadata, updated_at, cover: None });
+            edited.push(id);
+        }
+    }
+    Ok((out, edited))
 }
 
 /// Finds the library's book for a reference: by fingerprint, then path, then
@@ -224,8 +254,9 @@ fn find(tx: &Transaction, b: &BookRef) -> Result<Option<BookId>> {
 }
 
 /// Merges a backup into the library. With `dry_run` nothing is kept: the
-/// report says what would change.
-pub fn restore(c: &mut Connection, backup: &LibraryBackup, dry_run: bool) -> Result<RestoreReport> {
+/// report says what would change. Also returns, for edits that were applied
+/// and carry a cover, the book and the edit's index.
+pub fn restore(c: &mut Connection, backup: &LibraryBackup, dry_run: bool) -> Result<(RestoreReport, Vec<(BookId, usize)>)> {
     let tx = c.transaction()?;
     let mut report = RestoreReport { books: backup.books.len(), ..Default::default() };
     let mut ids: Vec<Option<BookId>> = Vec::with_capacity(backup.books.len());
@@ -318,10 +349,28 @@ pub fn restore(c: &mut Connection, backup: &LibraryBackup, dry_run: bool) -> Res
         )?;
     }
 
+    let mut covers = Vec::new();
+    for (i, e) in backup.edits.iter().enumerate() {
+        let Some(id) = id_of(e.book) else { continue };
+        // Edits made here since the backup are kept.
+        let (edited, updated_at): (bool, i64) =
+            tx.query_row("SELECT user_edited, updated_at FROM books WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        if edited && updated_at >= e.updated_at {
+            continue;
+        }
+        let mut m = e.metadata.clone();
+        crate::formats::util::normalize_metadata(&mut m);
+        crate::db::write_metadata(&tx, id, &m)?;
+        report.edits += 1;
+        if e.cover.is_some() {
+            covers.push((id, i));
+        }
+    }
+
     if dry_run {
         tx.rollback()?;
     } else {
         tx.commit()?;
     }
-    Ok(report)
+    Ok((report, covers))
 }

@@ -31,6 +31,7 @@ export function describe(r: RestoreReport): string[] {
   add(r.shelf_books, 'book added to a collection', 'books added to collections')
   add(r.marks, 'favourite or rating', 'favourites and ratings')
   add(r.reading_days, 'day of reading time', 'days of reading time')
+  add(r.edits ?? 0, 'book with edited details', 'books with edited details')
   return lines
 }
 

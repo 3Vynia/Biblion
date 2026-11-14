@@ -139,12 +139,36 @@ impl Library {
 
     /// Progress, notes, collections, marks and reading time, ready to save.
     pub fn export_backup(&self) -> Result<crate::backup::LibraryBackup> {
-        self.read(crate::backup::export)
+        use base64::Engine;
+        let (mut backup, edited) = self.read(crate::backup::export)?;
+        // Covers the user chose live only as thumbnails: keep those too.
+        for (e, id) in backup.edits.iter_mut().zip(edited) {
+            let book = self.get_book(id)?;
+            let Some(key) = book.cover_key.filter(|k| k.starts_with(&format!("{}-", book.fingerprint))) else { continue };
+            if let Ok(bytes) = std::fs::read(self.covers.thumb_path(&key)) {
+                e.cover = Some(base64::engine::general_purpose::STANDARD.encode(bytes));
+            }
+        }
+        Ok(backup)
     }
 
     /// Merges a backup in (see `backup::restore`); `dry_run` only reports.
     pub fn restore_backup(&self, backup: &crate::backup::LibraryBackup, dry_run: bool) -> Result<crate::backup::RestoreReport> {
-        self.user_write(|c| crate::backup::restore(c, backup, dry_run))
+        use base64::Engine;
+        let (report, covers) = self.user_write(|c| crate::backup::restore(c, backup, dry_run))?;
+        // A preview only reports: no cover is written.
+        for (id, i) in covers.into_iter().filter(|_| !dry_run) {
+            let Some(cover) = backup.edits.get(i).and_then(|e| e.cover.as_deref()) else { continue };
+            match base64::engine::general_purpose::STANDARD.decode(cover) {
+                Ok(bytes) => {
+                    if let Err(err) = self.replace_cover(id, &bytes) {
+                        tracing::warn!("could not restore the cover of book {id}: {err}");
+                    }
+                }
+                Err(err) => tracing::warn!("a backed-up cover is not valid base64: {err}"),
+            }
+        }
+        Ok(report)
     }
 
     // ── Library health ───────────────────────────────────────────────
