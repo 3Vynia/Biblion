@@ -960,6 +960,26 @@ pub fn set_cover_key(conn: &Connection, id: BookId, key: &str) -> Result<()> {
     Ok(())
 }
 
+/// A cover chosen by the user: kept by rescans, like edited metadata.
+/// Returns the previous key when no other book still uses it.
+pub fn set_user_cover_key(conn: &mut Connection, id: BookId, key: &str) -> Result<Option<String>> {
+    let tx = conn.transaction()?;
+    let old: Option<String> = tx
+        .query_row("SELECT cover_key FROM books WHERE id=?1", [id], |r| r.get(0))
+        .optional()?
+        .ok_or_else(|| crate::Error::NotFound(format!("book {id}")))?;
+    tx.execute("UPDATE books SET cover_key=?2, user_edited=1, updated_at=?3 WHERE id=?1", params![id, key, now()])?;
+    let orphan = match old {
+        Some(old) if old != key => {
+            let used: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM books WHERE cover_key=?1)", [&old], |r| r.get(0))?;
+            (!used).then_some(old)
+        }
+        _ => None,
+    };
+    tx.commit()?;
+    Ok(orphan)
+}
+
 pub fn stats(conn: &Connection) -> Result<LibraryStats> {
     let mut s = conn.query_row(
         "SELECT COUNT(*) FILTER (WHERE missing=0), COUNT(*) FILTER (WHERE missing=1),

@@ -734,3 +734,26 @@ fn a_backup_restores_into_another_library() {
     let again = new.restore_backup(&backup, false).unwrap();
     assert_eq!(again, RestoreReport { books: 2, matched: 2, ..Default::default() });
 }
+
+#[test]
+fn a_chosen_cover_replaces_the_old_one_and_survives_rescans() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("books");
+    std::fs::create_dir_all(&root).unwrap();
+    write_epub(&root.join("a.epub"), "Covered", "Some One", 3);
+    let lib = Library::open(tmp.path().join("data")).unwrap();
+    scan(&lib, &root);
+    let id = find(&lib, "Covered")[0].id;
+    let old = lib.get_book(id).unwrap().cover_key.unwrap();
+
+    let key = lib.replace_cover(id, &cover_jpeg(77)).unwrap();
+    assert_ne!(key, old, "a new key, so views drop the cached thumbnail");
+    assert!(lib.thumbnail_path(&key).is_file());
+    assert!(!lib.thumbnail_path(&old).exists(), "the unused old thumbnail is removed");
+
+    // Touching the file makes the scanner read it again; the chosen cover stays.
+    write_epub(&root.join("a.epub"), "Covered", "Some One", 4);
+    lib.scan(&biblion_core::scanner::ScanOptions { roots: vec![root.clone()], force: true, ..Default::default() }, &|_| {}).unwrap();
+    assert_eq!(lib.get_book(id).unwrap().cover_key.as_deref(), Some(key.as_str()));
+    assert!(lib.replace_cover(9999, &cover_jpeg(1)).is_err());
+}
